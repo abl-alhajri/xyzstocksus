@@ -1,0 +1,38 @@
+# --- Web / async ---
+Flask==3.0.3
+gunicorn==22.0.0
+python-dotenv==1.0.1
+httpx==0.27.2
+aiohttp==3.10.10
+tenacity==9.0.0
+
+# --- Scheduling / process mgmt ---
+APScheduler==3.10.4
+SQLAlchemy==2.0.35
+supervisor==4.2.5
+
+# --- Market data ---
+yfinance==0.2.50
+pandas==2.2.3
+numpy==1.26.4
+pandas-ta==0.3.14b0
+
+# --- HTTP / scraping / RSS ---
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+feedparser==6.0.11
+
+# --- Market calendar ---
+pandas-market-calendars==4.4.2
+pytz==2024.2
+
+# --- LLM ---
+anthropic==0.39.0
+
+# --- Telegram ---
+python-telegram-bot==21.6
+
+# --- Dev / test ---
+pytest==8.3.3
+pytest-asyncio==0.24.0
