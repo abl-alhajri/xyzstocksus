@@ -1,0 +1,6 @@
+-- Migration 001: initial schema.
+-- Loaded by db.migrate which inlines schema.sql then records the migration row.
+-- Runs idempotently — every CREATE uses IF NOT EXISTS.
+--
+-- After tables are created, db.migrate seeds stocks_metadata from the watchlist
+-- in Python (so the seed list stays in one place — config/watchlist.py).
