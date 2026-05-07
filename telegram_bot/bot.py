@@ -56,7 +56,7 @@ def build_application():
     Imported lazily by workers/web.py because the SDK isn't strictly required
     for the Flask /health endpoint.
     """
-    from telegram.ext import Application, CommandHandler  # type: ignore
+    from telegram.ext import Application, CommandHandler, CallbackQueryHandler  # type: ignore
 
     if not settings.telegram_bot_token:
         log.info("Telegram disabled — no bot token in env")
@@ -64,11 +64,52 @@ def build_application():
 
     app = Application.builder().token(settings.telegram_bot_token).build()
 
-    from telegram_bot.handlers import basic, watchlist
+    from telegram_bot import confirm
+    from telegram_bot.handlers import (
+        admin, analysis, basic, macro, positions, sharia, watchlist,
+    )
+
+    # always-available
     app.add_handler(CommandHandler("start", basic.start))
     app.add_handler(CommandHandler("help", basic.help_cmd))
     app.add_handler(CommandHandler("status", basic.status))
     app.add_handler(CommandHandler("watch", watchlist.watch))
+
+    # analysis
+    app.add_handler(CommandHandler("analyze", analysis.analyze))
+    app.add_handler(CommandHandler("quick", analysis.quick))
+    app.add_handler(CommandHandler("agents", analysis.agents))
+    app.add_handler(CommandHandler("signals", analysis.signals))
+
+    # sharia
+    app.add_handler(CommandHandler("sharia", sharia.sharia_cmd))
+    app.add_handler(CommandHandler("compliance", sharia.compliance_cmd))
+
+    # positions
+    app.add_handler(CommandHandler("buy", positions.buy))
+    app.add_handler(CommandHandler("sell", positions.sell))
+    app.add_handler(CommandHandler("positions", positions.positions_cmd))
+
+    # macro
+    app.add_handler(CommandHandler("btc", macro.btc_cmd))
+    app.add_handler(CommandHandler("macro", macro.macro_cmd))
+
+    # admin (destructive actions go through confirm.* with 60s TTL)
+    app.add_handler(CommandHandler("scan", admin.scan_cmd))
+    app.add_handler(CommandHandler("pause", admin.pause_cmd))
+    app.add_handler(CommandHandler("resume", admin.resume_cmd))
+    app.add_handler(CommandHandler("cost", admin.cost_cmd))
+    app.add_handler(CommandHandler("threshold", admin.threshold_cmd))
+    app.add_handler(CommandHandler("disable", admin.disable_cmd))
+    app.add_handler(CommandHandler("enable", admin.enable_cmd))
+
+    async def _confirm_handler(update, context):
+        text = await confirm.handle_callback(update, context)
+        try:
+            await update.callback_query.edit_message_text(text)
+        except Exception:
+            await update.effective_chat.send_message(text)
+    app.add_handler(CallbackQueryHandler(_confirm_handler))
 
     log.info("Telegram application ready")
     return app
