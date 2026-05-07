@@ -1,8 +1,9 @@
-"""Technical indicators using pandas-ta.
+"""Technical indicators (pure-Python, zero binary dependencies).
 
-Pure-Python where pandas-ta is missing — RSI, MACD, EMA, ATR have lightweight
-fallbacks so the module imports cleanly without pandas-ta installed and
-heuristic scoring still works on Railway even if a binary wheel fails.
+RSI(14), MACD(12,26,9), EMA(20/50), ATR(14), and 20d volume ratio — all
+implemented in plain Python so the module imports cleanly with only pandas
+on the path. We started with pandas-ta but its 0.3.x line was yanked from
+PyPI; pure-Python is more robust and avoids ABI issues on Railway.
 """
 from __future__ import annotations
 
