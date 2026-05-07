@@ -32,9 +32,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Local data
-data/
-/data/
+# Local runtime data (Railway mounts /data as a volume; this catches it on
+# local dev where DATA_DIR may be set to a path inside the repo)
 *.db
 *.db-journal
 *.db-wal
