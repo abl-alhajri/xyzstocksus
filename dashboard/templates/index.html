@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}XYZStocksUS — Dashboard{% endblock %}
+
+{% block content %}
+<section class="row top-row">
+  <div class="card btc-card">
+    <div class="card-head">BTC</div>
+    <div id="btc-price" class="big">—</div>
+    <div id="btc-meta" class="muted">regime · sma20 · sma50</div>
+  </div>
+  <div class="card market-card">
+    <div class="card-head">Market</div>
+    <div id="market-status" class="big">—</div>
+    <div id="market-note" class="muted">—</div>
+  </div>
+  <div class="card budget-card">
+    <div class="card-head">Today / Month</div>
+    <div id="cost-figs" class="big">—</div>
+    <div id="cost-meta" class="muted">deep · cap</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">Watchlist by sector</div>
+  <div id="watchlist" class="grid">Loading…</div>
+</section>
+
+<section class="row">
+  <section class="card flex1">
+    <div class="card-head">Recent signals</div>
+    <ul id="signals" class="signals">Loading…</ul>
+  </section>
+  <section class="card flex1">
+    <div class="card-head">Macro ticker</div>
+    <ul id="macro" class="macro">Loading…</ul>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+{% endblock %}

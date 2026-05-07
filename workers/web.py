@@ -1,39 +1,49 @@
-"""Web entrypoint — exposes Flask `app` for gunicorn.
+"""Web entrypoint — Flask dashboard + Telegram polling in a background thread.
 
-Phase 1 commit 1: minimal /health only. Dashboard + Telegram bot are wired in later commits.
+Gunicorn imports `app`. On first import we kick off:
+- DB migrations
+- Telegram bot polling (if a token is configured)
 """
 from __future__ import annotations
 
 import os
-import platform
+import threading
 import time
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify
+# 1. Flask app + routes
+from dashboard.app import create_app
 
-START_TIME = time.time()
-APP_VERSION = "0.1.0"
+app = create_app()
 
-app = Flask(__name__)
-
-
-@app.get("/health")
-def health() -> tuple:
-    payload = {
-        "status": "ok",
-        "service": "xyzstocksus",
-        "version": APP_VERSION,
-        "uptime_s": round(time.time() - START_TIME, 1),
-        "now_utc": datetime.now(timezone.utc).isoformat(),
-        "tz": os.getenv("TZ", "UTC"),
-        "python": platform.python_version(),
-    }
-    return jsonify(payload), 200
+# 2. Migrations on first boot
+try:
+    from db.migrate import run_migrations
+    _report = run_migrations()
+    print(f"[boot] migrations: applied={_report['applied']} "
+          f"seeded={_report['seeded_symbols']}", flush=True)
+except Exception as exc:  # pragma: no cover
+    print(f"[boot] migration warning: {exc}", flush=True)
 
 
-@app.get("/")
-def root() -> tuple:
-    return jsonify({"service": "xyzstocksus", "see": "/health"}), 200
+# 3. Telegram polling in a daemon thread (only if token is set)
+def _start_telegram() -> None:
+    try:
+        from telegram_bot.bot import build_application
+        application = build_application()
+        if application is None:
+            return
+        application.run_polling(close_loop=False, stop_signals=None)
+    except Exception as exc:
+        print(f"[boot] telegram polling failed: {exc}", flush=True)
+
+
+if os.getenv("TELEGRAM_BOT_TOKEN"):
+    t = threading.Thread(target=_start_telegram, daemon=True, name="telegram-bot")
+    t.start()
+    print("[boot] telegram polling thread started", flush=True)
+else:
+    print("[boot] telegram polling skipped (no token)", flush=True)
 
 
 if __name__ == "__main__":

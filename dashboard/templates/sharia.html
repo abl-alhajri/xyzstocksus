@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}XYZStocksUS — Sharia{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-head">Sharia compliance overview</div>
+  <div id="sharia-counts" class="counts">Loading…</div>
+</section>
+
+<section class="row">
+  <section class="card flex1">
+    <div class="card-head">Drift watchlist</div>
+    <ul id="drift" class="signals">Loading…</ul>
+  </section>
+  <section class="card flex1">
+    <div class="card-head">Recent compliance alerts</div>
+    <ul id="alerts" class="signals">Loading…</ul>
+  </section>
+</section>
+
+<section class="row">
+  <section class="card flex1">
+    <div class="card-head">🟢 HALAL (شرعي)</div>
+    <div id="halal-list" class="taglist">—</div>
+  </section>
+  <section class="card flex1">
+    <div class="card-head">🟡 MIXED (مختلط)</div>
+    <div id="mixed-list" class="taglist">—</div>
+  </section>
+  <section class="card flex1">
+    <div class="card-head">🔴 HARAM (غير شرعي)</div>
+    <div id="haram-list" class="taglist">—</div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>
+  // Sharia page-specific renderer
+  document.addEventListener('DOMContentLoaded', () => {
+    fetch('/api/sharia').then(r => r.json()).then(data => {
+      const c = document.getElementById('sharia-counts');
+      c.innerHTML = ['HALAL','MIXED','HARAM','PENDING'].map(k =>
+        `<span class="badge ${k.toLowerCase()}">${k}: ${data.counts[k] || 0}</span>`
+      ).join('');
+      document.getElementById('halal-list').innerHTML =
+        (data.halal || []).map(s => `<span class="tag halal">${s}</span>`).join('') || '—';
+      document.getElementById('mixed-list').innerHTML =
+        (data.mixed || []).map(s => `<span class="tag mixed">${s}</span>`).join('') || '—';
+      document.getElementById('haram-list').innerHTML =
+        (data.haram || []).map(s => `<span class="tag haram">${s}</span>`).join('') || '—';
+      document.getElementById('drift').innerHTML =
+        (data.drift_warnings || []).map(d =>
+          `<li><strong>${d.symbol}</strong> · approaching breach (filing ${d.new_value || '—'})</li>`
+        ).join('') || '<li>None.</li>';
+      document.getElementById('alerts').innerHTML =
+        (data.recent_alerts || []).slice(0, 20).map(a =>
+          `<li><strong>${a.symbol}</strong> · ${a.alert_type} · ${a.old_value || '—'} → ${a.new_value || '—'} <span class="muted">${(a.sent_at||'').slice(0,10)}</span></li>`
+        ).join('') || '<li>None.</li>';
+    }).catch(err => {
+      document.getElementById('sharia-counts').textContent = 'Error: ' + err;
+    });
+  });
+</script>
+{% endblock %}

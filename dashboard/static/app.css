@@ -1,0 +1,170 @@
+:root {
+  --bg: #0f172a;
+  --card: #1e293b;
+  --card-hover: #283447;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #6366f1;
+  --halal: #22c55e;
+  --mixed: #eab308;
+  --haram: #ef4444;
+  --pending: #64748b;
+  --green: #22c55e;
+  --red: #ef4444;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+               sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #1e293b;
+}
+
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .dot {
+  width: 10px; height: 10px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--accent);
+}
+.brand .title { font-weight: 600; letter-spacing: 0.2px; }
+
+.nav a {
+  margin-left: 14px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+.nav a:hover { color: var(--text); }
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.row { display: flex; gap: 16px; flex-wrap: wrap; }
+.row > * { min-width: 0; }
+.flex1 { flex: 1 1 280px; }
+
+.card {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25);
+}
+.card:hover { background: var(--card-hover); transition: background 0.15s; }
+.card-head {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.big { font-size: 22px; font-weight: 600; }
+.muted { color: var(--muted); font-size: 13px; }
+
+.top-row { gap: 12px; }
+.top-row .card { flex: 1 1 0; min-width: 130px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.sector { grid-column: 1 / -1; margin-top: 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.tile {
+  background: #0f172a;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tile .sym { font-weight: 600; }
+.tile .badge { font-size: 11px; }
+.tile .score { color: var(--muted); font-size: 12px; }
+
+.signals, .macro { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow-y: auto; }
+.signals li, .macro li {
+  padding: 6px 0;
+  border-bottom: 1px solid #1e293b;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.signals li:last-child, .macro li:last-child { border-bottom: 0; }
+
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 4px;
+}
+.badge.halal   { background: rgba(34,197,94,0.18); color: var(--halal); }
+.badge.mixed   { background: rgba(234,179,8,0.18); color: var(--mixed); }
+.badge.haram   { background: rgba(239,68,68,0.18); color: var(--haram); }
+.badge.pending { background: rgba(100,116,139,0.18); color: var(--pending); }
+
+.tag {
+  display: inline-block;
+  margin: 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #0f172a;
+}
+.tag.halal { color: var(--halal); }
+.tag.mixed { color: var(--mixed); }
+.tag.haram { color: var(--haram); }
+
+.taglist { line-height: 1.8; }
+
+.counts { display: flex; flex-wrap: wrap; gap: 8px; }
+.counts .badge { font-size: 13px; padding: 4px 8px; }
+
+.footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  border-top: 1px solid #1e293b;
+}
+.sep { opacity: 0.5; }
+
+@media (max-width: 640px) {
+  .top-row { flex-direction: column; }
+  .top-row .card { flex: 1 1 auto; }
+  .row { flex-direction: column; }
+  .container { padding: 12px; }
+}
