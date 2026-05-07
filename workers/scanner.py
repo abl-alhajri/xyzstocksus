@@ -1,8 +1,4 @@
-"""Worker entrypoint — runs the scheduled scan loop.
-
-Phase 1 commit 1: skeleton heartbeat only. The real scheduler, market calendar, and
-multi-agent debate orchestrator come online in later commits.
-"""
+"""Worker entrypoint — runs migrations, then the APScheduler loop."""
 from __future__ import annotations
 
 import os
@@ -11,17 +7,20 @@ import sys
 import time
 from datetime import datetime, timezone
 
-HEARTBEAT_SECONDS = 60
 
-
-def _log(msg: str) -> None:
+def _log(msg: str, **kw) -> None:
     ts = datetime.now(timezone.utc).isoformat()
-    print(f"[{ts}] worker | {msg}", flush=True)
+    extra = " ".join(f"{k}={v}" for k, v in kw.items())
+    print(f"[{ts}] worker | {msg} {extra}".strip(), flush=True)
 
 
-def _install_signal_handlers() -> None:
+def _install_signal_handlers(sched) -> None:
     def _handler(signum, _frame):
-        _log(f"received signal {signum}, shutting down")
+        _log("received signal, shutting down", signal=signum)
+        try:
+            sched.shutdown(wait=False)
+        except Exception:
+            pass
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _handler)
@@ -29,14 +28,26 @@ def _install_signal_handlers() -> None:
 
 
 def main() -> None:
-    _install_signal_handlers()
     data_dir = os.getenv("DATA_DIR", "/data")
     tz = os.getenv("TZ", "UTC")
-    _log(f"starting xyzstocksus worker (DATA_DIR={data_dir}, TZ={tz})")
-    _log("scheduler not yet wired — heartbeat-only mode for commit 1")
-    while True:
-        time.sleep(HEARTBEAT_SECONDS)
-        _log("heartbeat")
+    _log("worker boot", data_dir=data_dir, tz=tz)
+
+    # Run migrations + seed before scheduler starts
+    from db.migrate import run_migrations
+    report = run_migrations()
+    _log("migrations done", applied=report["applied"], seeded=report["seeded_symbols"])
+
+    from core.scheduler import build_scheduler
+    sched = build_scheduler()
+    _install_signal_handlers(sched)
+    sched.start()
+    _log("scheduler started", jobs=[j.id for j in sched.get_jobs()])
+
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        sched.shutdown(wait=False)
 
 
 if __name__ == "__main__":
