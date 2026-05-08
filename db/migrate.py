@@ -96,13 +96,17 @@ def run_migrations() -> dict:
                 report["already_present"].append(name)
                 continue
             sql_body = path.read_text(encoding="utf-8").strip()
+            rows_before = conn.total_changes
             if sql_body and not _is_only_comments(sql_body):
                 conn.executescript(sql_body)
+            rows_changed = conn.total_changes - rows_before
             conn.execute(
                 "INSERT INTO schema_migrations (id, name) VALUES (?, ?)",
                 (mig_id, name),
             )
             report["applied"].append(name)
+            if rows_changed:
+                print(f"[migrate] {name}: {rows_changed} rows changed")
 
         # Seed in one transaction (no executescript inside).
         conn.execute("BEGIN")
