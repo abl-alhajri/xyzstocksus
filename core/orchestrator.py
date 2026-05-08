@@ -257,14 +257,31 @@ async def run_scan_async(*, allow_outside_hours: bool = True) -> ScanReport:
     return report
 
 
+def _run_async_in_thread(coro_func, *args, **kwargs):
+    """Create the coroutine INSIDE the worker thread so it never leaks if
+    asyncio.run can't accept it. Used by run_scan() when the calling thread
+    already has a running event loop (e.g. async Telegram handler)."""
+    return asyncio.run(coro_func(*args, **kwargs))
+
+
 def run_scan() -> ScanReport:
-    """Sync entrypoint for /scan and tests."""
+    """Sync entrypoint for /scan and tests.
+
+    Two paths:
+      - No running loop in this thread (APScheduler worker, CLI) → asyncio.run.
+      - Running loop present (called from inside an async PTB handler) →
+        offload to a worker thread; the coroutine is constructed there so we
+        never produce a "coroutine was never awaited" warning.
+    """
     try:
-        return asyncio.run(run_scan_async())
+        asyncio.get_running_loop()
     except RuntimeError:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            return ex.submit(asyncio.run, run_scan_async()).result()
+        return asyncio.run(run_scan_async())
+
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        future = ex.submit(_run_async_in_thread, run_scan_async)
+        return future.result(timeout=300)
 
 
 # --------------------------- helpers --------------------------------------
