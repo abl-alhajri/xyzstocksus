@@ -28,8 +28,8 @@ from config.watchlist import WATCHLIST, all_symbols, get_seed
 # ----------------------- Watchlist -----------------------
 
 def test_watchlist_size_matches_spec():
-    # 51 stocks + 3 halal ETFs per spec
-    assert len(WATCHLIST) == 54
+    # 46 stocks + 3 halal ETFs per spec (trimmed from 54 to fit Tiingo free tier)
+    assert len(WATCHLIST) == 49
 
 
 def test_watchlist_no_overlap_with_excluded():

@@ -15,7 +15,6 @@ supervisor==4.2.5
 yfinance==0.2.50
 pandas==2.2.3
 numpy==1.26.4
-pandas-datareader>=0.10.0
 
 # --- HTTP / scraping / RSS ---
 requests==2.32.3

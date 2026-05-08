@@ -60,7 +60,7 @@ def test_api_watchlist_shape():
     assert r.status_code == 200
     body = r.get_json()
     assert "sectors" in body
-    assert body["total"] >= 50
+    assert body["total"] >= 49
     # Every sector entry has a list of stocks
     for sec in body["sectors"]:
         assert "sector" in sec

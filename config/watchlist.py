@@ -1,4 +1,4 @@
-"""Initial watchlist — 51 stocks + 3 halal ETFs.
+"""Initial watchlist — 46 stocks + 3 halal ETFs.
 
 Each entry carries:
 - sector (used by agent_set resolver and dashboard grid)
@@ -36,11 +36,6 @@ WATCHLIST: Dict[str, StockSeed] = {
         _seed("COIN", "CRYPTO_EXCHANGE", 1.8, "HALAL"),
         _seed("MARA", "BTC_MINER", 3.0, "HALAL"),
         _seed("RIOT", "BTC_MINER", 2.8, "HALAL"),
-        _seed("CLSK", "BTC_MINER", 2.6, "HALAL"),
-        _seed("WULF", "BTC_MINER", 2.5, "HALAL"),
-        _seed("CIFR", "BTC_MINER", 2.4, "HALAL"),
-        _seed("HUT", "BTC_MINER", 2.3, "HALAL"),
-        _seed("BTBT", "BTC_MINER", 2.2, "HALAL"),
         _seed("SMLR", "BTC_TREASURY", 2.0, "HALAL"),
         _seed("SQ", "CRYPTO_ADJACENT", 1.2, "MIXED"),
         _seed("PYPL", "CRYPTO_ADJACENT", 0.6, "MIXED"),
