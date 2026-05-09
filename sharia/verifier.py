@@ -30,8 +30,16 @@ from sharia.aaoifi import (
     worst_tier,
     is_drift_warning,
 )
+from config.sharia_certified_etfs import is_certified_etf, issuer_for
 from sharia.business_screen import BusinessVerdict, screen as business_screen
-from sharia.ratios import RatioInputs, RatiosComputed, compute, from_company_facts, from_yfinance_info
+from sharia.ratios import (
+    RatioInputs,
+    RatiosComputed,
+    compute,
+    extract_shares_outstanding,
+    from_company_facts,
+    from_yfinance_info,
+)
 
 log = get_logger("sharia.verifier")
 
@@ -72,6 +80,37 @@ def verify(
     sym = symbol.upper()
     fetched_at = datetime.now(timezone.utc).isoformat()
 
+    # 0. Sharia-certified ETF bypass — short-circuit before any data fetch.
+    if is_certified_etf(sym):
+        today = datetime.now(timezone.utc).date().isoformat()
+        synth_inputs = RatioInputs(
+            market_cap=None, total_debt=None, interest_bearing_debt=None,
+            cash_and_securities=None, total_revenue=None,
+            impermissible_revenue=None,
+            filing_date=today, filing_type="ETF_BYPASS",
+            notes=f"Sharia-certified ETF ({issuer_for(sym)})",
+        )
+        result = VerificationResult(
+            symbol=sym,
+            status=ShariaStatus.HALAL,
+            business=BusinessVerdict(
+                passed=True, reason=None, category=None,
+                notes="Sharia-certified ETF — bypassed business screen",
+            ),
+            ratios=RatiosComputed(inputs=synth_inputs, debt_ratio=None,
+                                  cash_ratio=None, impermissible_ratio=None),
+            debt_tier=RiskTier.GREEN,
+            cash_tier=RiskTier.GREEN,
+            impermissible_tier=RiskTier.GREEN,
+            overall_tier=RiskTier.GREEN,
+            drift_warning=False,
+            notes="Sharia-certified ETF (Wahed/SP Funds — bypassed financial screen)",
+            fetched_at=fetched_at,
+        )
+        if persist:
+            _persist(result)
+        return result
+
     biz = business_screen(symbol=sym, sec_sic=sec_sic,
                           yfinance_industry=yfinance_industry)
 
@@ -93,6 +132,15 @@ def verify(
         if persist:
             _persist(result)
         return result
+
+    # Compute market_cap from SEC shares × Tiingo close when caller didn't
+    # provide one (yfinance is rate-limited from cloud IPs — known issue).
+    mc_source: str | None = None
+    if market_cap is None and company_facts:
+        sec_tiingo_mc = _market_cap_from_sec_tiingo(sym, company_facts)
+        if sec_tiingo_mc is not None:
+            market_cap = sec_tiingo_mc
+            mc_source = "market_cap: computed from SEC shares × Tiingo close"
 
     # Prefer SEC company_facts for accuracy; fall back to yfinance.info
     if company_facts:
@@ -131,7 +179,16 @@ def verify(
     overall_tier = worst_tier(
         breakdown.debt_tier, breakdown.cash_tier, breakdown.impermissible_tier
     )
-    note_parts = [breakdown.notes]
+    # Replace misleading "Within thresholds but elevated" when ratios are
+    # None purely because market_cap couldn't be derived — the underlying
+    # state is "we couldn't compute", not "elevated".
+    if inputs.market_cap is None:
+        primary_note = "INCOMPLETE: missing market_cap (SEC shares × Tiingo close unavailable)"
+    else:
+        primary_note = breakdown.notes
+    note_parts = [primary_note]
+    if mc_source:
+        note_parts.append(mc_source)
     if drift:
         note_parts.append("Sharia Drift Radar: rising fast and within 3pp of breach")
     if inputs.notes:
@@ -205,3 +262,20 @@ def _persist(result: VerificationResult) -> None:
     except Exception as exc:  # pragma: no cover
         log.warning("stocks_metadata update failed",
                     extra={"symbol": result.symbol, "err": str(exc)})
+
+
+def _market_cap_from_sec_tiingo(symbol: str, facts: dict[str, Any]) -> float | None:
+    """shares_outstanding (SEC XBRL) × latest_close (Tiingo). None if either fails."""
+    shares = extract_shares_outstanding(facts)
+    if shares is None or shares <= 0:
+        return None
+    try:
+        from data.prices import latest_close
+        close = latest_close(symbol)
+    except Exception as exc:
+        log.warning("market_cap tiingo close failed",
+                    extra={"symbol": symbol, "err": str(exc)})
+        return None
+    if close is None or close <= 0:
+        return None
+    return float(shares) * float(close)

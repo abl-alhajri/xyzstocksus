@@ -204,3 +204,37 @@ def _latest_end(us_gaap: dict[str, Any], keys: tuple[str, ...]) -> str | None:
             if best is None or end > best:
                 best = end
     return best
+
+
+# US-GAAP / DEI concepts for shares outstanding. dei is the cover-page
+# concept (every filer reports it), us-gaap is the financial-statement
+# variant (less universally populated). Note: unit is "shares", not "USD".
+_SHARES_KEYS = (
+    ("dei", "EntityCommonStockSharesOutstanding"),
+    ("us-gaap", "CommonStockSharesOutstanding"),
+    ("us-gaap", "CommonStockSharesIssued"),
+)
+
+
+def extract_shares_outstanding(facts: dict[str, Any] | None) -> float | None:
+    """Latest shares-outstanding value from SEC companyfacts XBRL.
+
+    Returns None if no concept has a populated `shares` unit array. Used by
+    the verifier to compute market_cap = shares × latest_close when the
+    yfinance market_cap field is unavailable (e.g. cloud IP rate-limiting).
+    """
+    if not facts:
+        return None
+    facts_root = facts.get("facts") or {}
+    for ns, key in _SHARES_KEYS:
+        block = (facts_root.get(ns) or {}).get(key)
+        if not block:
+            continue
+        rows = (block.get("units") or {}).get("shares") or []
+        if not rows:
+            continue
+        latest = max(rows, key=lambda e: e.get("end") or "")
+        val = latest.get("val")
+        if isinstance(val, (int, float)) and val > 0:
+            return float(val)
+    return None

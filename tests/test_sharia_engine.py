@@ -237,3 +237,109 @@ def test_purification_calculates_correctly():
     e = estimate(impermissible_ratio=0.03, dividend_per_share=4.00, quantity=100)
     assert e.per_share_amount == pytest.approx(0.12)
     assert e.per_position_amount == pytest.approx(12.0)
+
+
+# -------------------------- ETF bypass + market_cap fix ------------------
+
+def test_certified_etf_bypassed_to_halal():
+    """HLAL/SPUS/SPSK return HALAL/GREEN without any data fetch."""
+    from sharia.verifier import verify
+    from sharia.aaoifi import ShariaStatus, RiskTier
+    res = verify("HLAL")  # no yfinance_info, no company_facts, no market_cap
+    assert res.status == ShariaStatus.HALAL
+    assert res.overall_tier == RiskTier.GREEN
+    assert "Sharia-certified ETF" in res.notes
+
+
+def test_certified_etf_skips_business_screen_and_persists():
+    from sharia.verifier import verify
+    from db.repos import sharia as sharia_repo
+    res = verify("SPUS")
+    assert res.business.passed is True
+    assert res.business.notes.startswith("Sharia-certified ETF")
+    latest = sharia_repo.latest_ratios("SPUS")
+    if latest is not None:  # only persists if symbol is in stocks_metadata
+        assert latest["sharia_status"] == "HALAL"
+
+
+def test_market_cap_computed_from_sec_and_tiingo(monkeypatch):
+    """When yfinance market_cap is None, SEC shares x Tiingo close should fill in."""
+    import data.prices as prices_mod
+    monkeypatch.setattr(prices_mod, "latest_close", lambda s: 50.0)
+    from sharia.verifier import verify
+    facts = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {"shares": [
+                        {"val": 1_000_000, "end": "2025-09-30"},
+                    ]}
+                }
+            },
+            "us-gaap": {
+                "LongTermDebt": {"units": {"USD": [
+                    {"val": 1_000_000, "end": "2025-09-30"},
+                ]}},
+                "Revenues": {"units": {"USD": [
+                    {"val": 5_000_000, "end": "2025-09-30"},
+                ]}},
+            },
+        }
+    }
+    res = verify("AAPL", market_cap=None, company_facts=facts)
+    # market_cap = 1_000_000 x 50 = 50_000_000
+    # debt_ratio = 1_000_000 / 50_000_000 = 0.02
+    assert res.ratios is not None
+    assert res.ratios.inputs.market_cap == 50_000_000
+    assert res.ratios.debt_ratio == pytest.approx(0.02)
+    assert "computed from SEC shares" in res.notes
+
+
+def test_market_cap_incomplete_when_shares_missing(monkeypatch):
+    """SEC has no shares concept -> market_cap stays None -> INCOMPLETE note."""
+    import data.prices as prices_mod
+    monkeypatch.setattr(prices_mod, "latest_close", lambda s: 50.0)
+    from sharia.verifier import verify
+    facts_no_shares = {
+        "facts": {
+            "us-gaap": {
+                "LongTermDebt": {"units": {"USD": [
+                    {"val": 1_000_000, "end": "2025-09-30"},
+                ]}},
+                "Revenues": {"units": {"USD": [
+                    {"val": 5_000_000, "end": "2025-09-30"},
+                ]}},
+            }
+        }
+    }
+    res = verify("UNKNOWN", market_cap=None, company_facts=facts_no_shares)
+    assert res.ratios.inputs.market_cap is None
+    assert res.ratios.debt_ratio is None
+    assert "INCOMPLETE" in res.notes
+    assert "missing market_cap" in res.notes
+
+
+def test_extract_shares_outstanding_prefers_dei():
+    """dei.EntityCommonStockSharesOutstanding takes priority over us-gaap variant."""
+    from sharia.ratios import extract_shares_outstanding
+    facts = {
+        "facts": {
+            "dei": {
+                "EntityCommonStockSharesOutstanding": {
+                    "units": {"shares": [{"val": 100, "end": "2025-09-30"}]}
+                }
+            },
+            "us-gaap": {
+                "CommonStockSharesOutstanding": {
+                    "units": {"shares": [{"val": 999, "end": "2025-09-30"}]}
+                }
+            },
+        }
+    }
+    assert extract_shares_outstanding(facts) == 100.0
+
+
+def test_extract_shares_outstanding_returns_none_when_missing():
+    from sharia.ratios import extract_shares_outstanding
+    assert extract_shares_outstanding(None) is None
+    assert extract_shares_outstanding({"facts": {"us-gaap": {}}}) is None
