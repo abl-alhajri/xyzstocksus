@@ -3,6 +3,11 @@
 The web process imports `build_application()` and runs it as a polling task
 alongside Flask. The same module exposes `send_text` for one-shot pushes
 from the scheduler / orchestrator.
+
+`send_text` defaults to parse_mode='HTML'. On a Telegram BadRequest (e.g.
+unbalanced markup that slipped past the formatter) we log the failure body
++ the first 500 chars of the offending message, then retry once as plain
+text so the alert still gets through instead of vanishing silently.
 """
 from __future__ import annotations
 
@@ -13,8 +18,13 @@ from core.logger import get_logger
 
 log = get_logger("telegram.bot")
 
+# Telegram caps a single message at 4096 chars; we leave headroom for the
+# truncation marker.
+_MAX_MESSAGE_LEN = 3800
+_TRUNCATE_SUFFIX = "\n…(truncated)"
 
-async def send_text(text: str, *, parse_mode: str | None = "Markdown",
+
+async def send_text(text: str, *, parse_mode: str | None = "HTML",
                     chat_id: str | None = None) -> int | None:
     """Fire-and-forget message. Returns message_id or None on failure."""
     if not settings.telegram_bot_token:
@@ -24,19 +34,51 @@ async def send_text(text: str, *, parse_mode: str | None = "Markdown",
     if not target:
         log.info("telegram skipped — no chat_id configured")
         return None
+
+    if len(text) > _MAX_MESSAGE_LEN:
+        text = text[:_MAX_MESSAGE_LEN] + _TRUNCATE_SUFFIX
+
     try:
         from telegram import Bot  # type: ignore
-        bot = Bot(token=settings.telegram_bot_token)
-        msg = await bot.send_message(chat_id=int(target), text=text,
-                                     parse_mode=parse_mode,
-                                     disable_web_page_preview=True)
+        from telegram.error import BadRequest  # type: ignore
+    except Exception as exc:
+        log.warning("telegram SDK not importable", extra={"err": str(exc)})
+        return None
+
+    bot = Bot(token=settings.telegram_bot_token)
+
+    async def _send(body: str, mode: str | None) -> int | None:
+        msg = await bot.send_message(
+            chat_id=int(target), text=body, parse_mode=mode,
+            disable_web_page_preview=True,
+        )
         return int(msg.message_id) if msg else None
+
+    try:
+        return await _send(text, parse_mode)
+    except BadRequest as exc:
+        # Surface the actual reason ("Can't parse entities: ...") and a
+        # preview of the body so future failures are diagnosable.
+        log.error(
+            "telegram BadRequest — retrying as plain text",
+            extra={
+                "telegram_err": str(exc),
+                "parse_mode": parse_mode,
+                "body_preview": text[:500],
+            },
+        )
+        try:
+            return await _send(text, None)
+        except Exception as exc2:
+            log.warning("telegram plain-text retry failed",
+                        extra={"err": str(exc2)})
+            return None
     except Exception as exc:
         log.warning("telegram send failed", extra={"err": str(exc)})
         return None
 
 
-def send_text_sync(text: str, *, parse_mode: str | None = "Markdown",
+def send_text_sync(text: str, *, parse_mode: str | None = "HTML",
                    chat_id: str | None = None) -> int | None:
     try:
         return asyncio.run(send_text(text, parse_mode=parse_mode, chat_id=chat_id))

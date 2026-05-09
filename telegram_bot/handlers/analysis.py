@@ -1,8 +1,14 @@
-"""/analyze /quick /agents /signals — on-demand multi-agent analysis."""
+"""/analyze /quick /agents /signals — on-demand multi-agent analysis.
+
+All replies that interpolate dynamic strings (LLM rationale, agent names,
+DB fields) use parse_mode='HTML' and route those substrings through
+`html.escape` — see telegram_bot/alerts.py for why.
+"""
 from __future__ import annotations
 
 import asyncio
 import json
+from html import escape as h
 
 from agents.base import AgentInput
 from agents.debate import run_debate_async
@@ -87,7 +93,7 @@ async def _run_and_reply(update, symbol: str, *, force_full: bool):
     agent_set = SETS_BY_NAME.get(inp.agent_set, SETS_BY_NAME["standard"])
     result = await run_debate_async(inp, agent_set, force_full_mode=force_full)
     text = render_signal(result, btc_price=inp.btc_price)
-    await update.message.reply_text(text, parse_mode="Markdown",
+    await update.message.reply_text(text, parse_mode="HTML",
                                    disable_web_page_preview=True)
 
 
@@ -122,7 +128,7 @@ async def signals(update, context):
     if not rows:
         await update.message.reply_text("No signals yet.")
         return
-    lines = ["*Recent signals (last 10)*"]
+    lines = ["<b>Recent signals (last 10)</b>"]
     for r in rows:
         decision = r.get("decision", "?")
         sym = r.get("symbol", "?")
@@ -130,8 +136,8 @@ async def signals(update, context):
         ts = (r.get("timestamp") or "")[:19]
         sharia = r.get("sharia_status") or ""
         conf_s = f"{int(round((conf or 0) * 100))}%" if conf is not None else "—"
-        lines.append(f"  • {ts}  {sym}  {decision}  {conf_s}  {sharia}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        lines.append(f"  • {h(ts)}  {h(sym)}  {h(decision)}  {h(conf_s)}  {h(sharia)}")
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 async def agents(update, context):
@@ -148,7 +154,7 @@ async def agents(update, context):
     if not outs:
         await update.message.reply_text(f"No agent outputs stored for last {sym} signal.")
         return
-    lines = [f"*Last debate breakdown — {sym}*\n"]
+    lines = [f"<b>Last debate breakdown — {h(sym)}</b>\n"]
     for o in outs:
         decision = o.get("decision") or "?"
         conf = o.get("confidence") or 0.0
@@ -161,5 +167,8 @@ async def agents(update, context):
                          or "")[:160]
         except Exception:
             pass
-        lines.append(f"*{agent}* — {decision} ({int(round(conf*100))}%)\n  {rationale}\n")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        lines.append(
+            f"<b>{h(agent)}</b> — {h(decision)} ({int(round(conf*100))}%)\n"
+            f"  {h(rationale)}\n"
+        )
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")

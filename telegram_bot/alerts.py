@@ -2,10 +2,21 @@
 
 Mixes English (technical content) with Arabic (Sharia status labels) per the
 project plan's communication rules.
+
+Signal alerts (`render_signal`, `_render_vetoed`) emit HTML for
+parse_mode='HTML'. Every dynamic substring — anything from the LLM, a
+date, a label, or a ticker — passes through `html.escape`, so an unbalanced
+`_`, `*`, `[`, `<`, etc. in LLM output can never break the parser. (Markdown
+V1 has no escape sequence; this is the root cause of the 400 errors we hit.)
+
+`render_status` and `render_compliance_alert` are still Markdown — their
+callers (basic.status, sharia/monitor) live outside the scope of this fix
+and will be migrated separately.
 """
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape as h
 from zoneinfo import ZoneInfo
 
 from agents.debate import DebateResult
@@ -23,10 +34,9 @@ ARABIC = {
 
 def render_signal(d: DebateResult, *, btc_price: float | None = None,
                   macro_quote: str | None = None) -> str:
-    """Render a BUY/HOLD signal in the format from the project spec.
+    """Render a BUY/HOLD signal as HTML for parse_mode='HTML'.
 
-    Output is intended for parse_mode='Markdown'. Stops/TPs/entry come from
-    the synthesizer's structured payload.
+    Stops/TPs/entry come from the synthesizer's structured payload.
     """
     final = d.final
     if d.vetoed or final is None:
@@ -41,14 +51,12 @@ def render_signal(d: DebateResult, *, btc_price: float | None = None,
     sharia_out = next((o for o in d.round1 if o.agent_name == "sharia"), None)
     sharia_status = "PENDING"
     drift = False
-    debt_ratio = cash_ratio = imp_ratio = None
     last_verified = None
     if sharia_out:
         s_in = (sharia_out.structured.get("structured") or {})
         sharia_status = s_in.get("status") or sharia_out.decision or "PENDING"
         drift = bool(s_in.get("drift_warning"))
         last_verified = s_in.get("as_of_filing")
-    # Pull ratios from agent_input (we serialise them under round1's sharia.structured)
     sharia_label = ARABIC.get(sharia_status, sharia_status)
 
     # Devil's Advocate
@@ -70,47 +78,50 @@ def render_signal(d: DebateResult, *, btc_price: float | None = None,
     icon = "🟢" if decision == "BUY" else ("🟡" if decision == "HOLD" else "⚪")
 
     lines: list[str] = []
-    lines.append(f"{icon} *NEW SIGNAL — {d.symbol}*")
+    lines.append(f"{icon} <b>NEW SIGNAL — {h(d.symbol)}</b>")
     lines.append("")
-    lines.append(f"🕌 *Sharia Status:* {sharia_label}")
+    lines.append(f"🕌 <b>Sharia Status:</b> {h(sharia_label)}")
     if last_verified:
-        lines.append(f"   • Last verified: {last_verified}")
+        lines.append(f"   • Last verified: {h(str(last_verified))}")
     if drift:
         lines.append("   • ⚠️ Drift warning — approaching breach")
     lines.append("")
-    lines.append(f"📊 *Trade Type:* {trade_type}")
-    lines.append(f"🎯 *Confidence:* {confidence_pct}%")
+    lines.append(f"📊 <b>Trade Type:</b> {h(str(trade_type))}")
+    lines.append(f"🎯 <b>Confidence:</b> {confidence_pct}%")
     lines.append("")
 
     if entry:
-        lines.append(f"💵 *Entry:* {_fmt_zone(entry)}")
+        lines.append(f"💵 <b>Entry:</b> {h(_fmt_zone(entry))}")
     if stop is not None:
-        lines.append(f"🛡️ *Stop Loss:* {_fmt_num(stop)}")
+        lines.append(f"🛡️ <b>Stop Loss:</b> ${_fmt_num(stop)}")
     if tps:
         lines.append("")
-        lines.append("✨ *Take Profits:*")
+        lines.append("✨ <b>Take Profits:</b>")
         for tp in tps:
             label = tp.get("label", "TP")
             price = _fmt_num(tp.get("price"))
             size = tp.get("size_pct")
             size_s = f" — sell {int(size)}%" if size else ""
-            lines.append(f"   {label}: {price}{size_s}")
+            lines.append(f"   {h(str(label))}: ${price}{size_s}")
     lines.append("")
-    lines.append(f"⚖️ *R:R:* {rr}")
+    lines.append(f"⚖️ <b>R:R:</b> {h(str(rr))}")
     lines.append("")
 
     if btc_price is not None:
-        lines.append(f"₿ *BTC:* ${_fmt_num(btc_price)} ({d.round1[0].structured.get('btc_regime') if d.round1 else ''})")
+        regime = ""
+        if d.round1:
+            regime = str(d.round1[0].structured.get("btc_regime") or "")
+        lines.append(f"₿ <b>BTC:</b> ${_fmt_num(btc_price)} ({h(regime)})")
     if macro_text:
-        lines.append(f"🎤 *Macro:* {macro_text}")
+        lines.append(f"🎤 <b>Macro:</b> {h(str(macro_text))}")
     if devil_text:
-        lines.append(f"😈 *Devil's Advocate:* {devil_text}")
+        lines.append(f"😈 <b>Devil's Advocate:</b> {h(str(devil_text))}")
 
     lines.append("")
     summary = structured_inner.get("summary") or final.rationale
     if summary:
-        lines.append("🧠 *Synthesis:*")
-        lines.append(summary[:400])
+        lines.append("🧠 <b>Synthesis:</b>")
+        lines.append(h(str(summary)[:400]))
 
     now_utc = datetime.now(tz=UTC)
     now_dubai = now_utc.astimezone(DUBAI)
@@ -121,9 +132,9 @@ def render_signal(d: DebateResult, *, btc_price: float | None = None,
 
 def _render_vetoed(d: DebateResult) -> str:
     return (
-        f"🚫 *SIGNAL REJECTED — {d.symbol}*\n\n"
-        f"🕌 Sharia veto: {d.veto_reason or 'Sharia status not compliant'}\n"
-        f"_No alert was emitted (signal would conflict with AAOIFI rules)._"
+        f"🚫 <b>SIGNAL REJECTED — {h(d.symbol)}</b>\n\n"
+        f"🕌 Sharia veto: {h(str(d.veto_reason or 'Sharia status not compliant'))}\n"
+        f"<i>No alert was emitted (signal would conflict with AAOIFI rules).</i>"
     )
 
 
