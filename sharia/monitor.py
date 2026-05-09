@@ -20,9 +20,10 @@ and renders alerts.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from core.logger import get_logger
 from db.repos import positions as positions_repo
@@ -184,6 +185,131 @@ def run_weekly_full_scan(
     )
 
 
+# --------------------------- on-demand full refresh ---------------------
+
+def run_full_refresh(
+    *,
+    progress_cb: Callable[[str], None] | None = None,
+    every: int = 5,
+    fetch_yfinance_info=None,
+    fetch_company_facts=None,
+    fetch_market_cap=None,
+) -> dict:
+    """Re-verify every enabled ticker, with progress callbacks + cache fallback.
+
+    Backs the /refresh_sharia admin command. Differences vs run_weekly_full_scan:
+      - emits per-N-ticker progress via `progress_cb(str)` (chat updates)
+      - on yfinance + SEC double-failure, falls back to the most recent cached
+        row in financial_ratios_history rather than poisoning the DB with
+        zero/garbage values
+      - structured `[sharia-refresh]` log lines so Railway logs are greppable
+    """
+    if fetch_yfinance_info is None:
+        fetch_yfinance_info = _yf_info_for
+    if fetch_company_facts is None:
+        from data.sec_edgar import company_facts as _facts
+        fetch_company_facts = _facts
+    if fetch_market_cap is None:
+        fetch_market_cap = _market_cap_for
+
+    started = time.time()
+    syms = [s.symbol for s in stocks_repo.list_all(enabled_only=True)]
+    total = len(syms)
+
+    log.info("[sharia-refresh] Starting full verification: %d tickers", total)
+    if progress_cb:
+        try:
+            progress_cb(f"<b>[sharia-refresh]</b> Starting: {total} tickers")
+        except Exception:
+            pass
+
+    by_status: dict[str, int] = {"HALAL": 0, "MIXED": 0, "HARAM": 0, "PENDING": 0}
+    status_changes: list[dict] = []
+    used_cache: list[str] = []
+    errors: list[dict] = []
+
+    for i, sym in enumerate(syms, 1):
+        try:
+            previous = sharia_repo.latest_ratios(sym)
+            prev_status = (previous or {}).get("sharia_status")
+
+            info = fetch_yfinance_info(sym)
+            facts = fetch_company_facts(sym)
+
+            # Cache fallback when both live data sources are unavailable
+            if info is None and facts is None:
+                if previous:
+                    cached_at = (previous.get("fetched_at") or "?")[:10]
+                    log.warning("[sharia-refresh] %s: data sources failed, "
+                                "using cached row from %s", sym, cached_at)
+                    used_cache.append(sym)
+                    if prev_status:
+                        by_status[prev_status] = by_status.get(prev_status, 0) + 1
+                    continue
+                log.warning("[sharia-refresh] %s: no data and no cache — "
+                            "skipping (INCOMPLETE, not persisted)", sym)
+                errors.append({"symbol": sym, "reason": "no data + no cache"})
+                continue
+
+            mc = fetch_market_cap(sym)
+            res = verify(sym, market_cap=mc, yfinance_info=info,
+                         company_facts=facts, persist=True)
+            new_status = res.status.value
+            by_status[new_status] = by_status.get(new_status, 0) + 1
+
+            if prev_status and prev_status != new_status:
+                debt_old = (previous or {}).get("debt_ratio")
+                debt_new = res.ratios.debt_ratio if res.ratios else None
+                debt_str = ""
+                if debt_old is not None and debt_new is not None:
+                    debt_str = f" (debt: {debt_old*100:.0f}% → {debt_new*100:.0f}%)"
+                log.info("[sharia-refresh] %s: %s → %s%s",
+                         sym, prev_status, new_status, debt_str)
+                status_changes.append({"symbol": sym,
+                                       "old": prev_status, "new": new_status})
+            else:
+                log.info("[sharia-refresh] %s: %s (no change)", sym, new_status)
+
+        except Exception as exc:
+            log.warning("[sharia-refresh] %s: failed: %s", sym, exc)
+            errors.append({"symbol": sym, "err": str(exc)})
+
+        if progress_cb and i % every == 0 and i < total:
+            try:
+                progress_cb(f"Verified {i}/{total}…")
+            except Exception:
+                pass
+
+    elapsed = time.time() - started
+    summary = (
+        f"✅ <b>[sharia-refresh] Done</b> in "
+        f"{int(elapsed // 60)}m {int(elapsed % 60)}s\n"
+        f"  HALAL: {by_status.get('HALAL', 0)}\n"
+        f"  MIXED: {by_status.get('MIXED', 0)}\n"
+        f"  HARAM: {by_status.get('HARAM', 0)}\n"
+        f"  Status changes: {len(status_changes)}\n"
+        f"  Used cache: {len(used_cache)}\n"
+        f"  FAILED: {len(errors)}"
+    )
+    log.info("[sharia-refresh] Done in %dm %ds. Status changes: %d, "
+             "errors: %d", int(elapsed // 60), int(elapsed % 60),
+             len(status_changes), len(errors))
+    if progress_cb:
+        try:
+            progress_cb(summary)
+        except Exception:
+            pass
+
+    return {
+        "total": total,
+        "elapsed_sec": elapsed,
+        "by_status": by_status,
+        "status_changes": status_changes,
+        "used_cache": used_cache,
+        "errors": errors,
+    }
+
+
 # --------------------------- diff + alert helpers -----------------------
 
 def _diff_and_alert(sym: str, previous: dict | None,
@@ -264,10 +390,14 @@ def _yf_info_for(symbol: str) -> dict | None:
     try:
         import yfinance as yf  # type: ignore
         t = yf.Ticker(symbol)
-        return t.info if t else None
+        info = t.info if t else None
+        # yfinance returns {} on rate-limit / silent failure; treat as None
+        if not info:
+            log.warning("[sharia] yfinance returned empty for %s", symbol)
+            return None
+        return info
     except Exception as exc:
-        log.warning("yfinance info failed",
-                    extra={"symbol": symbol, "err": str(exc)})
+        log.warning("[sharia] yfinance failed for %s: %s", symbol, exc)
         return None
 
 

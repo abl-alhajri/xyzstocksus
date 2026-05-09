@@ -434,7 +434,11 @@ async def _maybe_push_signal_async(d: DebateResult, sid: int,
 
         from telegram_bot.alerts import render_signal
         from telegram_bot.bot import send_text
-        text = render_signal(d, btc_price=btc_price)
+        stock = stocks_repo.get(d.symbol)
+        text = render_signal(
+            d, btc_price=btc_price,
+            sharia_verified_at=getattr(stock, "sharia_status_verified_at", None),
+        )
         msg_id = await send_text(text)
         if msg_id is not None:
             signals_repo.mark_sent(sid, msg_id)

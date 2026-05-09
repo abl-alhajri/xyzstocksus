@@ -1,6 +1,9 @@
-"""/scan /pause /resume /cost /threshold /disable /enable — admin commands."""
+"""/scan /pause /resume /cost /threshold /disable /enable /refresh_sharia — admin commands."""
 from __future__ import annotations
 
+import asyncio
+
+from config.settings import settings
 from core import budget_guard, cost_tracker
 from core.logger import get_logger
 from db.repos import runtime_config
@@ -8,6 +11,21 @@ from db.repos import stocks as stocks_repo
 from telegram_bot import confirm
 
 log = get_logger("telegram.admin")
+
+
+def _is_admin(update) -> bool:
+    """True iff the message originates from settings.telegram_chat_id.
+
+    /refresh_sharia is the first admin-gated command — runs a 3-6 min
+    full-watchlist re-verification and incurs SEC + yfinance traffic, so we
+    don't want strangers triggering it if the bot is ever shared.
+    """
+    if not settings.telegram_chat_id:
+        return False
+    chat = update.effective_chat
+    if chat is None:
+        return False
+    return str(chat.id) == str(settings.telegram_chat_id)
 
 
 async def scan_cmd(update, context):
@@ -100,6 +118,48 @@ async def disable_cmd(update, context):
     action_id, _ = confirm.register(description=description, callback=_do)
     kb = confirm.build_keyboard(action_id)
     await update.message.reply_text(f"❓ {description}? (60s timeout)", reply_markup=kb)
+
+
+async def refresh_sharia_cmd(update, context):
+    """Force-refresh Sharia status for every enabled ticker.
+
+    Admin-only (chat_id must match settings.telegram_chat_id). The work runs
+    on a background thread so the polling loop stays responsive; progress
+    is sent back to the same chat as the verification advances.
+    """
+    if not _is_admin(update):
+        await update.message.reply_text("⛔ Admin only.")
+        log.info("refresh_sharia denied (non-admin)",
+                 extra={"chat_id": update.effective_chat.id if update.effective_chat else None})
+        return
+
+    target_chat = str(update.effective_chat.id)
+    await update.message.reply_text(
+        "🔄 Sharia refresh started — full watchlist takes ~3-6 min."
+    )
+
+    loop = asyncio.get_running_loop()
+
+    def progress(msg: str) -> None:
+        # Called from the worker thread — schedule the async send back on
+        # the polling loop so we don't touch PTB internals from off-thread.
+        from telegram_bot.bot import send_text
+        try:
+            asyncio.run_coroutine_threadsafe(
+                send_text(msg, chat_id=target_chat), loop,
+            )
+        except Exception as exc:
+            log.warning("refresh progress send failed", extra={"err": str(exc)})
+
+    def _work() -> None:
+        from sharia.monitor import run_full_refresh
+        try:
+            run_full_refresh(progress_cb=progress, every=5)
+        except Exception as exc:
+            log.error("refresh_sharia worker crashed", extra={"err": str(exc)})
+            progress(f"❌ Refresh crashed: {exc}")
+
+    asyncio.create_task(asyncio.to_thread(_work))
 
 
 async def enable_cmd(update, context):

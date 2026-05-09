@@ -144,6 +144,7 @@ def build_application():
     app.add_handler(CommandHandler("threshold", admin.threshold_cmd))
     app.add_handler(CommandHandler("disable", admin.disable_cmd))
     app.add_handler(CommandHandler("enable", admin.enable_cmd))
+    app.add_handler(CommandHandler("refresh_sharia", admin.refresh_sharia_cmd))
 
     async def _confirm_handler(update, context):
         text = await confirm.handle_callback(update, context)

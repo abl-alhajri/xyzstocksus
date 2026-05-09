@@ -33,10 +33,13 @@ ARABIC = {
 
 
 def render_signal(d: DebateResult, *, btc_price: float | None = None,
-                  macro_quote: str | None = None) -> str:
+                  macro_quote: str | None = None,
+                  sharia_verified_at: str | None = None) -> str:
     """Render a BUY/HOLD signal as HTML for parse_mode='HTML'.
 
     Stops/TPs/entry come from the synthesizer's structured payload.
+    `sharia_verified_at` is `stocks_metadata.sharia_status_verified_at` —
+    distinct from the SEC filing date (which moves quarterly).
     """
     final = d.final
     if d.vetoed or final is None:
@@ -82,7 +85,9 @@ def render_signal(d: DebateResult, *, btc_price: float | None = None,
     lines.append("")
     lines.append(f"🕌 <b>Sharia Status:</b> {h(sharia_label)}")
     if last_verified:
-        lines.append(f"   • Last verified: {h(str(last_verified))}")
+        lines.append(f"   • Filing date: {h(str(last_verified))}")
+    if sharia_verified_at:
+        lines.append(f"   • Last checked: {h(_fmt_datetime(sharia_verified_at))}")
     if drift:
         lines.append("   • ⚠️ Drift warning — approaching breach")
     lines.append("")
@@ -143,6 +148,17 @@ def _fmt_zone(zone) -> str:
         return f"${_fmt_num(zone[0])}-{_fmt_num(zone[1])}"
     except Exception:
         return str(zone)
+
+
+def _fmt_datetime(s: str) -> str:
+    """ISO-8601 → 'YYYY-MM-DD HH:MM UTC'. Returns input unchanged on parse failure."""
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+    except Exception:
+        return s
 
 
 def _fmt_num(v) -> str:

@@ -92,7 +92,11 @@ async def _run_and_reply(update, symbol: str, *, force_full: bool):
         return
     agent_set = SETS_BY_NAME.get(inp.agent_set, SETS_BY_NAME["standard"])
     result = await run_debate_async(inp, agent_set, force_full_mode=force_full)
-    text = render_signal(result, btc_price=inp.btc_price)
+    stock = get(symbol)
+    text = render_signal(
+        result, btc_price=inp.btc_price,
+        sharia_verified_at=getattr(stock, "sharia_status_verified_at", None),
+    )
     await update.message.reply_text(text, parse_mode="HTML",
                                    disable_web_page_preview=True)
 

@@ -119,6 +119,30 @@ def test_compliance_alert_renders():
     assert "YELLOW" in text and "ORANGE" in text
 
 
+def test_filing_date_and_last_checked_render_separately():
+    """Filing date (from SEC) and last-checked timestamp (from our DB) are
+    distinct. Pre-fix both showed the same value labelled 'Last verified'."""
+    from telegram_bot.alerts import render_signal
+    text = render_signal(
+        _make_debate(),
+        btc_price=84500.0,
+        sharia_verified_at="2026-05-09T12:30:00+00:00",
+    )
+    # Filing date (was "Last verified") now correctly labelled
+    assert "Filing date: 2025-09-30" in text
+    # New line: when the verifier last re-checked the symbol
+    assert "Last checked: 2026-05-09 12:30 UTC" in text
+    # Old misleading label must not reappear
+    assert "Last verified" not in text
+
+
+def test_last_checked_omitted_when_not_provided():
+    from telegram_bot.alerts import render_signal
+    text = render_signal(_make_debate(), btc_price=84500.0)
+    assert "Last checked" not in text
+    assert "Filing date: 2025-09-30" in text
+
+
 def test_take_profit_prices_have_dollar_prefix():
     from telegram_bot.alerts import render_signal
     text = render_signal(_make_debate())
