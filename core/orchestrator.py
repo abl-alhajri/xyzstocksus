@@ -17,7 +17,10 @@ from agents.base import AgentInput, AgentOutput
 from agents.debate import DebateResult, run_debate_async
 from config.agent_sets import SETS_BY_NAME
 from config.settings import settings
-from config.thresholds import BTC_DUMP_PCT, BTC_DUMP_WINDOW_MIN, MIN_CONFIDENCE_FOR_ALERT
+from config.thresholds import (
+    BTC_DUMP_PCT, BTC_DUMP_WINDOW_MIN,
+    DEDUP_CONFIDENCE_JUMP, DEDUP_WINDOW_HOURS, MIN_CONFIDENCE_FOR_ALERT,
+)
 from core import budget_guard, dedup
 from core.logger import get_logger
 from data import btc_feed, earnings_calendar, macro_feed, openinsider, prices
@@ -240,12 +243,13 @@ async def run_scan_async(*, allow_outside_hours: bool = True) -> ScanReport:
         report.debates = list(debates)
 
     # ------------------------------------------------------------------
-    # 7. Persist signals + dedup
+    # 7. Persist signals + push to Telegram
     # ------------------------------------------------------------------
     for d in report.debates:
         sid = _persist_debate_signal(d)
         if sid is not None:
             report.signals_recorded.append(sid)
+            await _maybe_push_signal_async(d, sid, report.btc_price)
 
     # Reconcile quick_only flag (auto-flips at 75% monthly)
     try:
@@ -379,6 +383,68 @@ def _persist_debate_signal(d: DebateResult) -> int | None:
             cost_usd=final.usage.cost_usd, latency_ms=final.usage.latency_ms,
         )
     return sid
+
+
+async def _maybe_push_signal_async(d: DebateResult, sid: int,
+                                    btc_price: float | None) -> None:
+    """Push a freshly-persisted signal to Telegram if all gates hold.
+
+    Gates (all required):
+      - decision == BUY                     (HOLD/PASS not actionable)
+      - confidence >= MIN_CONFIDENCE_FOR_ALERT
+      - sharia_status == HALAL              (defence-in-depth; vetoed signals
+        already short-circuit in _persist_debate_signal)
+      - runtime_config.alerts_paused != True
+      - signals_repo.should_dedup(...) == False  (suppress same-symbol re-alerts
+        inside DEDUP_WINDOW_HOURS unless confidence jumped DEDUP_CONFIDENCE_JUMP)
+
+    Failures are logged and swallowed so a flaky Telegram never breaks a scan.
+    """
+    try:
+        if d.vetoed or d.final is None:
+            return
+
+        decision = (d.final.decision or "HOLD").upper()
+        if decision != "BUY":
+            return
+
+        confidence = float(d.final.confidence or 0.0)
+        if confidence < MIN_CONFIDENCE_FOR_ALERT:
+            return
+
+        sharia_status = _sharia_snapshot(d)
+        if sharia_status != "HALAL":
+            return
+
+        from db.repos import runtime_config
+        if runtime_config.get_value("alerts_paused", False):
+            log.info("scan alert suppressed (alerts paused)",
+                     extra={"symbol": d.symbol})
+            return
+
+        if signals_repo.should_dedup(
+            d.symbol,
+            new_confidence=confidence,
+            window_hours=DEDUP_WINDOW_HOURS,
+            confidence_jump=DEDUP_CONFIDENCE_JUMP,
+        ):
+            log.info("scan alert suppressed (dedup)",
+                     extra={"symbol": d.symbol, "signal_id": sid})
+            return
+
+        from telegram_bot.alerts import render_signal
+        from telegram_bot.bot import send_text
+        text = render_signal(d, btc_price=btc_price)
+        msg_id = await send_text(text)
+        if msg_id is not None:
+            signals_repo.mark_sent(sid, msg_id)
+            log.info("signal pushed to telegram",
+                     extra={"symbol": d.symbol, "signal_id": sid,
+                            "telegram_msg_id": msg_id})
+    except Exception as exc:
+        log.warning("scan alert push failed",
+                    extra={"symbol": getattr(d, "symbol", "?"),
+                           "signal_id": sid, "err": str(exc)})
 
 
 def _sharia_snapshot(d: DebateResult) -> str | None:
