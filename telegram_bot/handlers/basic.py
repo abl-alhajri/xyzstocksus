@@ -1,36 +1,35 @@
 """/start, /help, /status — the always-available handlers."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from core import budget_guard
 from core.logger import get_logger
 from db.repos import runtime_config, signals as signals_repo
 from telegram_bot.alerts import render_status
+from telegram_bot.safe_reply import safe_html_reply
 
 log = get_logger("telegram.basic")
 
 
 HELP_TEXT = (
-    "*XYZStocksUS — Telegram commands*\n\n"
-    "*Status / info*\n"
+    "<b>XYZStocksUS — Telegram commands</b>\n\n"
+    "<b>Status / info</b>\n"
     "/start /help /status — this menu / bot status\n"
     "/watch — watchlist with heuristic + Sharia\n"
     "/btc — BTC price + regime\n"
     "/macro — recent Powell/Fed/Trump quotes\n\n"
-    "*Analysis*\n"
+    "<b>Analysis</b>\n"
     "/analyze SYMBOL — full multi-agent debate (R1+R2+R3)\n"
     "/quick SYMBOL — faster analysis (R1+R3)\n"
     "/agents SYMBOL — last analysis broken down per agent\n"
     "/signals — last 10 signals\n\n"
-    "*Sharia*\n"
+    "<b>Sharia</b>\n"
     "/sharia SYMBOL — full Sharia status report\n"
     "/compliance — weekly compliance summary\n\n"
-    "*Positions*\n"
+    "<b>Positions</b>\n"
     "/buy SYMBOL @ PRICE × QTY — record a position\n"
     "/sell SYMBOL — close a position\n"
     "/positions — show tracked positions\n\n"
-    "*Admin*\n"
+    "<b>Admin</b>\n"
     "/scan — trigger manual scan\n"
     "/cost — API spend (today + month)\n"
     "/pause /resume — alerts on/off\n"
@@ -52,7 +51,7 @@ async def start(update, context):
 
 
 async def help_cmd(update, context):
-    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
+    await safe_html_reply(update, HELP_TEXT)
     runtime_config.log_command(
         chat_id=str(update.effective_chat.id) if update.effective_chat else None,
         command="/help", args=None, success=True,
@@ -90,7 +89,7 @@ async def status(update, context):
     except Exception:
         pass
 
-    await update.message.reply_text(render_status(payload), parse_mode="Markdown")
+    await safe_html_reply(update, render_status(payload))
     runtime_config.log_command(
         chat_id=str(update.effective_chat.id) if update.effective_chat else None,
         command="/status", args=None, success=True,

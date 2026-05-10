@@ -11,13 +11,11 @@ from __future__ import annotations
 
 from html import escape as h
 
-from core.logger import get_logger
 from db.repos import sharia as sharia_repo
 from db.repos.stocks import get
 from sharia.reporter import build_weekly_report, render_html
 from telegram_bot.alerts import ARABIC
-
-log = get_logger("telegram.handlers.sharia")
+from telegram_bot.safe_reply import safe_html_reply
 
 # Telegram message hard cap is 4096; leave headroom for HTML tags.
 _MAX_LEN = 3500
@@ -66,7 +64,7 @@ async def sharia_cmd(update, context):
             lines.append(f"  • {h(sent_at)}  {h(str(atype))}: "
                          f"{h(str(old))} → {h(str(new))}")
 
-    await _safe_html_reply(update, "\n".join(lines))
+    await safe_html_reply(update, "\n".join(lines))
 
 
 async def compliance_cmd(update, context):
@@ -74,28 +72,7 @@ async def compliance_cmd(update, context):
     body = render_html(rep)
     if len(body) > _MAX_LEN:
         body = body[:_MAX_LEN] + _TRUNCATE_SUFFIX
-    await _safe_html_reply(update, body)
-
-
-async def _safe_html_reply(update, body: str) -> None:
-    """Send as HTML; on Telegram BadRequest log the cause and retry as plain text.
-
-    Mirrors the bot.send_text fallback pattern — if the message would have
-    been dropped (vanishing into a 400), the user still gets unstyled content
-    instead of nothing.
-    """
-    try:
-        from telegram.error import BadRequest  # type: ignore
-    except Exception:
-        BadRequest = Exception  # pragma: no cover
-    try:
-        await update.message.reply_text(body, parse_mode="HTML")
-    except BadRequest as exc:
-        log.error(
-            "telegram BadRequest on sharia handler — retrying plain text",
-            extra={"telegram_err": str(exc), "body_preview": body[:500]},
-        )
-        await update.message.reply_text(body, parse_mode=None)
+    await safe_html_reply(update, body)
 
 
 def _pct(v) -> str:

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import re
+from html import escape as h
 
 from db.repos import positions as positions_repo
 from db.repos import stocks as stocks_repo
 from telegram_bot.alerts import ARABIC
 from telegram_bot import confirm
+from telegram_bot.safe_reply import safe_html_reply
 
 # Format examples (case-insensitive, flexible whitespace):
 #   /buy TSLA @ 245.50 x 10
@@ -54,10 +56,10 @@ async def buy(update, context):
         sharia_status_at_entry=sharia_status,
         notes="Recorded via /buy",
     )
-    await update.message.reply_text(
-        f"📥 Position opened: *{sym}* @ ${price:.2f} × {qty:g}\n"
-        f"Sharia at entry: {label}\nID: {pid}",
-        parse_mode="Markdown",
+    await safe_html_reply(
+        update,
+        f"📥 Position opened: <b>{h(sym)}</b> @ ${price:.2f} × {qty:g}\n"
+        f"Sharia at entry: {h(label)}\nID: {pid}",
     )
 
 
@@ -91,12 +93,15 @@ async def positions_cmd(update, context):
     if not rows:
         await update.message.reply_text("No open positions tracked.")
         return
-    lines = ["*Tracked positions*"]
+    lines = ["<b>Tracked positions</b>"]
     for p in rows:
         sym = p.get("symbol")
         price = p.get("entry_price")
         qty = p.get("quantity")
         date = (p.get("entry_date") or "")[:10]
         sharia = ARABIC.get(p.get("sharia_status_at_entry") or "", "")
-        lines.append(f"  • {sym}  ${price:.2f} × {qty:g}  ({date})  {sharia}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        lines.append(
+            f"  • {h(str(sym))}  ${price:.2f} × {qty:g}  "
+            f"({h(date)})  {h(sharia)}"
+        )
+    await safe_html_reply(update, "\n".join(lines))

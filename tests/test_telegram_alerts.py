@@ -112,13 +112,6 @@ def test_vetoed_signal_renders_rejected():
     assert "Sharia veto" in text
 
 
-def test_compliance_alert_renders():
-    from telegram_bot.alerts import render_compliance_alert
-    text = render_compliance_alert("MSTR", "TIER_CHANGE", "YELLOW", "ORANGE")
-    assert "MSTR" in text
-    assert "YELLOW" in text and "ORANGE" in text
-
-
 def test_filing_date_and_last_checked_render_separately():
     """Filing date (from SEC) and last-checked timestamp (from our DB) are
     distinct. Pre-fix both showed the same value labelled 'Last verified'."""

@@ -118,7 +118,7 @@ def test_compliance_cmd_uses_html_render():
 
 def test_safe_html_reply_falls_back_to_plain_on_badrequest():
     """If HTML send raises BadRequest, the helper retries with parse_mode=None."""
-    from telegram_bot.handlers import sharia as sharia_h
+    from telegram_bot.safe_reply import safe_html_reply
     from telegram.error import BadRequest
 
     sent: list[dict] = []
@@ -132,7 +132,7 @@ def test_safe_html_reply_falls_back_to_plain_on_badrequest():
             sent.append({"text": text, **kwargs})
 
     update = SimpleNamespace(message=FakeMsg())
-    asyncio.run(sharia_h._safe_html_reply(update, "<b>Test</b>"))
+    asyncio.run(safe_html_reply(update, "<b>Test</b>"))
 
     assert calls["n"] == 2  # one HTML attempt + one plain-text retry
     assert len(sent) == 1

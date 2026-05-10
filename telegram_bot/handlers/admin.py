@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from html import escape as h
 
 from config.settings import settings
 from core import budget_guard, cost_tracker
@@ -9,6 +10,7 @@ from core.logger import get_logger
 from db.repos import runtime_config
 from db.repos import stocks as stocks_repo
 from telegram_bot import confirm
+from telegram_bot.safe_reply import safe_html_reply
 
 log = get_logger("telegram.admin")
 
@@ -60,20 +62,20 @@ async def cost_cmd(update, context):
     bs = budget_guard.state()
     breakdown = cost_tracker.per_agent_today()
     lines = [
-        "*API spend*",
+        "<b>API spend</b>",
         f"  • Today: ${bs.today_usd:.2f} / soft ${2.50:.2f} / hard ${5.00:.2f}",
         f"  • Month: ${bs.month_usd:.2f} / hard $80.00",
         f"  • Deep today: {bs.deep_count_today} / 30",
         f"  • Quick-only mode: {'ON' if bs.quick_only else 'off'}",
         "",
-        "*Per agent (today)*",
+        "<b>Per agent (today)</b>",
     ]
     if breakdown:
         for agent, total in sorted(breakdown.items(), key=lambda x: -x[1]):
-            lines.append(f"  • {agent}: ${total:.4f}")
+            lines.append(f"  • {h(str(agent))}: ${total:.4f}")
     else:
         lines.append("  (no calls today)")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await safe_html_reply(update, "\n".join(lines))
 
 
 async def threshold_cmd(update, context):

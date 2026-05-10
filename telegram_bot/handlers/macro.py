@@ -1,8 +1,11 @@
 """/btc /macro — quick context lookups."""
 from __future__ import annotations
 
+from html import escape as h
+
 from data.btc_feed import classify_regime, fetch_spot
 from data.macro_feed import recent_quotes
+from telegram_bot.safe_reply import safe_html_reply
 
 
 async def btc_cmd(update, context):
@@ -15,12 +18,12 @@ async def btc_cmd(update, context):
     sma20 = f"{regime.sma_20:,.0f}" if regime.sma_20 is not None else "—"
     sma50 = f"{regime.sma_50:,.0f}" if regime.sma_50 is not None else "—"
     text = (
-        f"₿ *BTC:* ${snap.price:,.2f}\n"
-        f"Regime: *{regime.label}*\n"
-        f"SMA20 / SMA50: {sma20} / {sma50}\n"
-        f"Last close: {last_close}"
+        f"₿ <b>BTC:</b> ${snap.price:,.2f}\n"
+        f"Regime: <b>{h(str(regime.label))}</b>\n"
+        f"SMA20 / SMA50: {h(str(sma20))} / {h(str(sma50))}\n"
+        f"Last close: {h(str(last_close))}"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await safe_html_reply(update, text)
 
 
 async def macro_cmd(update, context):
@@ -37,12 +40,15 @@ async def macro_cmd(update, context):
     if not quotes:
         await update.message.reply_text("Macro feed unavailable.")
         return
-    lines = ["*Recent macro quotes*\n"]
+    lines = ["<b>Recent macro quotes</b>", ""]
     for q in quotes:
         sentiment = q.get("sentiment") or "—"
         speaker = q.get("speaker") or "—"
         date = (q.get("date") or "")[:10]
         text = (q.get("quote_text") or "")[:200]
         icon = {"HAWKISH": "🦅", "DOVISH": "🕊️"}.get(sentiment, "•")
-        lines.append(f"{icon} *{speaker}* ({date}) {sentiment}\n  {text}\n")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        lines.append(
+            f"{icon} <b>{h(str(speaker))}</b> ({h(date)}) {h(str(sentiment))}\n"
+            f"  {h(str(text))}\n"
+        )
+    await safe_html_reply(update, "\n".join(lines))

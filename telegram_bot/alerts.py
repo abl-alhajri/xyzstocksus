@@ -3,15 +3,11 @@
 Mixes English (technical content) with Arabic (Sharia status labels) per the
 project plan's communication rules.
 
-Signal alerts (`render_signal`, `_render_vetoed`) emit HTML for
-parse_mode='HTML'. Every dynamic substring — anything from the LLM, a
-date, a label, or a ticker — passes through `html.escape`, so an unbalanced
-`_`, `*`, `[`, `<`, etc. in LLM output can never break the parser. (Markdown
-V1 has no escape sequence; this is the root cause of the 400 errors we hit.)
-
-`render_status` and `render_compliance_alert` are still Markdown — their
-callers (basic.status, sharia/monitor) live outside the scope of this fix
-and will be migrated separately.
+All renderers in this module emit HTML for parse_mode='HTML'. Every dynamic
+substring — anything from the LLM, a date, a label, or a ticker — passes
+through `html.escape`, so an unbalanced `_`, `*`, `[`, `<`, etc. in LLM
+output can never break the parser. (Markdown V1 has no escape sequence;
+this was the root cause of the 400 errors we hit.)
 """
 from __future__ import annotations
 
@@ -174,29 +170,17 @@ def _fmt_num(v) -> str:
 
 
 def render_status(report) -> str:
-    """Compose a /status response. `report` carries the latest scan summary."""
+    """Compose a /status response (HTML). `report` carries the latest scan summary."""
     return (
-        "*XYZStocksUS status*\n"
-        f"• Last scan: {report.get('finished_at', '—')}\n"
-        f"• Market: {report.get('market_status', '—')}\n"
-        f"• BTC: ${report.get('btc_price', '—')} ({report.get('btc_regime', '—')})\n"
+        "<b>XYZStocksUS status</b>\n"
+        f"• Last scan: {h(str(report.get('finished_at', '—')))}\n"
+        f"• Market: {h(str(report.get('market_status', '—')))}\n"
+        f"• BTC: ${h(str(report.get('btc_price', '—')))} "
+        f"({h(str(report.get('btc_regime', '—')))})\n"
         f"• Candidates: {report.get('candidates_pool', 0)} → "
         f"prescreen {report.get('prescreen_pool', 0)} → "
         f"deep {report.get('deep_survivors', 0)}\n"
         f"• Today spend: ${report.get('today_usd', 0):.2f} / "
         f"month ${report.get('month_usd', 0):.2f}\n"
         f"• Quick-only mode: {report.get('quick_only', False)}\n"
-    )
-
-
-def render_compliance_alert(symbol: str, alert_type: str, old: str, new: str) -> str:
-    icon = {"TIER_CHANGE": "📊", "STATUS_CHANGE": "🚨",
-            "DRIFT_WARN": "⚠️", "NEW_FILING": "📄"}.get(alert_type, "ℹ️")
-    title = {"TIER_CHANGE": "Tier change",
-             "STATUS_CHANGE": "Sharia status change",
-             "DRIFT_WARN": "Sharia Drift Radar",
-             "NEW_FILING": "New SEC filing"}.get(alert_type, alert_type)
-    return (
-        f"{icon} *{title} — {symbol}*\n"
-        f"  {old} → {new}"
     )
