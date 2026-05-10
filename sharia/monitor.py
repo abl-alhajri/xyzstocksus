@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Iterable, Optional
 
+from config.sharia_certified_etfs import is_certified_etf
 from core.logger import get_logger
 from db.repos import positions as positions_repo
 from db.repos import sharia as sharia_repo
@@ -232,6 +233,25 @@ def run_full_refresh(
         try:
             previous = sharia_repo.latest_ratios(sym)
             prev_status = (previous or {}).get("sharia_status")
+
+            # Sharia-certified ETFs (HLAL/SPUS/SPSK) bypass all data fetches.
+            # Both yfinance and SEC return nothing useful for ETFs, which
+            # would short-circuit to the cached-row branch below before
+            # verify()'s ETF bypass is ever reached.
+            if is_certified_etf(sym):
+                res = verify(sym, persist=True)
+                new_status = res.status.value
+                by_status[new_status] = by_status.get(new_status, 0) + 1
+                if prev_status and prev_status != new_status:
+                    log.info("[sharia-refresh] %s: ETF_BYPASS %s → %s",
+                             sym, prev_status, new_status)
+                    status_changes.append({"symbol": sym,
+                                           "old": prev_status,
+                                           "new": new_status})
+                else:
+                    log.info("[sharia-refresh] %s: ETF_BYPASS → %s",
+                             sym, new_status)
+                continue
 
             info = fetch_yfinance_info(sym)
             facts = fetch_company_facts(sym)

@@ -167,6 +167,52 @@ def test_no_data_no_cache_marked_incomplete(monkeypatch):
     assert "no data + no cache" in out["errors"][0]["reason"]
 
 
+def test_etf_bypass_runs_before_data_fetches(monkeypatch):
+    """HLAL/SPUS/SPSK must reach verify() even when yfinance + SEC both fail.
+
+    Without the early bypass, info=None + facts=None hits the cached-row
+    branch and continues, never calling verify(). This regression test pins
+    the bypass to BEFORE the fetcher calls.
+    """
+    fetched: list[tuple[str, str]] = []
+
+    mon, _fi, _ff, fmc = _patch_monitor(
+        monkeypatch,
+        syms=["HLAL"],
+        latest_ratios={
+            "HLAL": {"sharia_status": "PENDING", "debt_ratio": None,
+                     "fetched_at": "2026-04-01T00:00:00+00:00"},
+        },
+        verify_results={"HLAL": _vresult("HALAL")},
+    )
+
+    def tracking_info(sym):
+        fetched.append(("info", sym))
+        return None
+
+    def tracking_facts(sym):
+        fetched.append(("facts", sym))
+        return None
+
+    out = mon.run_full_refresh(
+        progress_cb=None, every=99,
+        fetch_yfinance_info=tracking_info,
+        fetch_company_facts=tracking_facts,
+        fetch_market_cap=fmc,
+    )
+
+    # Bypass triggered: HLAL counted as HALAL, not cached, no errors.
+    assert out["by_status"]["HALAL"] == 1
+    assert out["used_cache"] == []
+    assert out["errors"] == []
+    # Status changed PENDING → HALAL via bypass.
+    assert any(c["symbol"] == "HLAL" and c["new"] == "HALAL"
+               for c in out["status_changes"])
+    # Critical: fetchers were NOT called for HLAL — the bypass ran first.
+    assert ("info", "HLAL") not in fetched
+    assert ("facts", "HLAL") not in fetched
+
+
 def test_progress_callback_called_at_cadence_and_summary(monkeypatch):
     mon, fi, ff, fmc = _patch_monitor(
         monkeypatch,
