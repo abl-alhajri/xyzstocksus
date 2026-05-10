@@ -103,6 +103,95 @@ def test_migration_003_renames_sq_across_all_symbol_tables():
         ).fetchone() is None
 
 
+def test_migration_004_purges_disabled_btc_miners():
+    """004 must hard-delete CLSK/WULF/CIFR/HUT/BTBT and all child rows, idempotently."""
+    from db.connection import get_conn
+    from db.migrate import MIGRATIONS_DIR, run_migrations
+
+    run_migrations()  # bootstrap
+
+    miners = ("CLSK", "WULF", "CIFR", "HUT", "BTBT")
+
+    # Simulate the production pre-purge state: re-insert the 5 miners with
+    # rows in every symbol-bearing table. FK off so child rows can land
+    # before re-creating their parent.
+    with get_conn() as conn:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        for sym in miners:
+            conn.execute(
+                "INSERT INTO stocks_metadata "
+                "(symbol, sector, btc_beta, agent_set, enabled, expected_status) "
+                "VALUES (?, 'BTC_MINER', 2.5, 'btc_full', 0, 'HALAL')",
+                (sym,),
+            )
+            conn.execute(
+                "INSERT INTO heuristic_scores (symbol, timestamp, score) "
+                "VALUES (?, '2026-04-01', 50.0)",
+                (sym,),
+            )
+            conn.execute(
+                "INSERT INTO prescreen_results "
+                "(symbol, timestamp, haiku_verdict, deep_analyze) "
+                "VALUES (?, '2026-04-01', 0, 0)",
+                (sym,),
+            )
+            conn.execute(
+                "INSERT INTO signals (timestamp, symbol, decision, confidence) "
+                "VALUES ('2026-04-01', ?, 'PASS', 0.4)",
+                (sym,),
+            )
+            conn.execute(
+                "INSERT INTO agent_outputs "
+                "(symbol, timestamp, agent_name, round_num, output_json) "
+                "VALUES (?, '2026-04-01', 'technical', 1, '{}')",
+                (sym,),
+            )
+            conn.execute(
+                "INSERT INTO financial_ratios_history "
+                "(symbol, fetched_at, sharia_status) "
+                "VALUES (?, '2026-04-01', 'HALAL')",
+                (sym,),
+            )
+            conn.execute(
+                "INSERT INTO compliance_alerts "
+                "(symbol, alert_type, severity, sent_at) "
+                "VALUES (?, 'STATUS_CHANGE', 'INFO', '2026-04-01')",
+                (sym,),
+            )
+            conn.execute(
+                "INSERT INTO api_costs "
+                "(timestamp, model, symbol, cost_usd) "
+                "VALUES ('2026-04-01', 'haiku', ?, 0.001)",
+                (sym,),
+            )
+        conn.execute("PRAGMA foreign_keys=ON")
+
+    # Apply 004 directly; bootstrap already recorded it in schema_migrations.
+    sql = (MIGRATIONS_DIR / "004_purge_disabled_btc_miners.sql").read_text(encoding="utf-8")
+    with get_conn() as conn:
+        conn.executescript(sql)
+
+        for table in ("stocks_metadata", "heuristic_scores", "prescreen_results",
+                      "signals", "agent_outputs", "financial_ratios_history",
+                      "compliance_alerts", "api_costs"):
+            placeholders = ",".join("?" * len(miners))
+            remaining = conn.execute(
+                f"SELECT COUNT(*) AS n FROM {table} "
+                f"WHERE symbol IN ({placeholders})",
+                miners,
+            ).fetchone()
+            assert remaining["n"] == 0, f"{table} still has rows for purged miners"
+
+        # Idempotent: a second pass finds nothing to do, no error.
+        conn.executescript(sql)
+        sm_count = conn.execute(
+            f"SELECT COUNT(*) AS n FROM stocks_metadata "
+            f"WHERE symbol IN ({','.join('?' * len(miners))})",
+            miners,
+        ).fetchone()
+        assert sm_count["n"] == 0
+
+
 def test_all_tables_exist():
     from db.migrate import run_migrations
     from db.connection import get_conn
