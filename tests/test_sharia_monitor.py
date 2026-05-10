@@ -183,7 +183,7 @@ def test_drift_warning_alert_fires_once_per_filing():
 
 def test_weekly_reporter_renders():
     from db.repos import sharia as sharia_repo, stocks as stocks_repo
-    from sharia.reporter import build_weekly_report, render_markdown
+    from sharia.reporter import build_weekly_report, render_html
 
     stocks_repo.set_sharia_status("AAPL", "HALAL")
     stocks_repo.set_sharia_status("TSLA", "MIXED")
@@ -195,7 +195,9 @@ def test_weekly_reporter_renders():
     assert rep.counts.get("HALAL", 0) >= 1
     assert rep.counts.get("MIXED", 0) >= 1
 
-    md = render_markdown(rep)
-    assert "Weekly Sharia Compliance Report" in md
-    assert "🟢 شرعي" in md
-    assert "🟡 مختلط" in md
+    body = render_html(rep)
+    assert "Weekly Sharia Compliance Report" in body
+    assert "🟢 شرعي" in body
+    assert "🟡 مختلط" in body
+    assert "<b>" in body              # HTML tags landed
+    assert "*Status" not in body      # no Markdown bold leaked through

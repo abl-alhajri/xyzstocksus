@@ -1,10 +1,27 @@
-"""/sharia /compliance — Sharia status reports."""
+"""/sharia /compliance — Sharia status reports.
+
+Both handlers emit HTML (parse_mode='HTML'). Every dynamic substring —
+ticker, status label, ratio %, notes, alert types/values — passes through
+html.escape, so an unbalanced `_`/`*`/`[`/`<` from verifier notes (e.g.
+snake_case identifiers like `impermissible_revenue`) can never break the
+parser. Markdown V1 has no escape sequence; this is the same root cause
+as the signal-alert 400s fixed in 4469ba7.
+"""
 from __future__ import annotations
 
+from html import escape as h
+
+from core.logger import get_logger
 from db.repos import sharia as sharia_repo
 from db.repos.stocks import get
-from sharia.reporter import build_weekly_report, render_markdown
+from sharia.reporter import build_weekly_report, render_html
 from telegram_bot.alerts import ARABIC
+
+log = get_logger("telegram.handlers.sharia")
+
+# Telegram message hard cap is 4096; leave headroom for HTML tags.
+_MAX_LEN = 3500
+_TRUNCATE_SUFFIX = "\n…(truncated)"
 
 
 async def sharia_cmd(update, context):
@@ -18,40 +35,67 @@ async def sharia_cmd(update, context):
         return
     latest = sharia_repo.latest_ratios(sym)
     label = ARABIC.get(stock.sharia_status, stock.sharia_status)
-    lines = [f"*Sharia report — {sym}*\n", f"Status: {label}"]
+    lines: list[str] = [f"<b>Sharia report — {h(sym)}</b>", "",
+                        f"Status: {h(label)}"]
     if latest:
-        lines.append(f"As of filing: {latest.get('filing_date') or '—'}  "
-                     f"(type {latest.get('filing_type') or '—'})")
-        debt = latest.get("debt_ratio")
-        cash = latest.get("cash_ratio")
-        imp = latest.get("impermissible_ratio")
+        filing_date = latest.get("filing_date") or "—"
+        filing_type = latest.get("filing_type") or "—"
+        lines.append(f"As of filing: {h(str(filing_date))}  "
+                     f"(type {h(str(filing_type))})")
         risk_tier = latest.get("risk_tier") or "—"
         lines.append("")
-        lines.append(f"• Debt / market cap:        {_pct(debt)} (max 30%)")
-        lines.append(f"• Cash+securities / mcap:   {_pct(cash)} (max 30%)")
-        lines.append(f"• Impermissible income:     {_pct(imp)} (max 5%)")
-        lines.append(f"• Worst-tier:               {risk_tier}")
+        lines.append(f"• Debt / market cap:        {_pct(latest.get('debt_ratio'))} (max 30%)")
+        lines.append(f"• Cash+securities / mcap:   {_pct(latest.get('cash_ratio'))} (max 30%)")
+        lines.append(f"• Impermissible income:     {_pct(latest.get('impermissible_ratio'))} (max 5%)")
+        lines.append(f"• Worst-tier:               {h(str(risk_tier))}")
         notes = latest.get("notes") or ""
         if notes:
-            lines.append(f"• Notes: {notes[:300]}")
+            lines.append(f"• Notes: {h(str(notes)[:300])}")
     else:
         lines.append("No financial ratios yet — awaiting first verification.")
 
     alerts = sharia_repo.alerts_for_symbol(sym, limit=5)
     if alerts:
-        lines.append("\n*Recent alerts:*")
+        lines.append("")
+        lines.append("<b>Recent alerts:</b>")
         for a in alerts:
-            lines.append(f"  • {a.get('sent_at','')[:10]}  {a.get('alert_type')}: "
-                        f"{a.get('old_value')} → {a.get('new_value')}")
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            sent_at = (a.get("sent_at") or "")[:10]
+            atype = a.get("alert_type") or "?"
+            old = a.get("old_value") or "—"
+            new = a.get("new_value") or "—"
+            lines.append(f"  • {h(sent_at)}  {h(str(atype))}: "
+                         f"{h(str(old))} → {h(str(new))}")
+
+    await _safe_html_reply(update, "\n".join(lines))
 
 
 async def compliance_cmd(update, context):
     rep = build_weekly_report(days=7)
-    md = render_markdown(rep)
-    if len(md) > 3500:
-        md = md[:3500] + "\n…"
-    await update.message.reply_text(md, parse_mode="Markdown")
+    body = render_html(rep)
+    if len(body) > _MAX_LEN:
+        body = body[:_MAX_LEN] + _TRUNCATE_SUFFIX
+    await _safe_html_reply(update, body)
+
+
+async def _safe_html_reply(update, body: str) -> None:
+    """Send as HTML; on Telegram BadRequest log the cause and retry as plain text.
+
+    Mirrors the bot.send_text fallback pattern — if the message would have
+    been dropped (vanishing into a 400), the user still gets unstyled content
+    instead of nothing.
+    """
+    try:
+        from telegram.error import BadRequest  # type: ignore
+    except Exception:
+        BadRequest = Exception  # pragma: no cover
+    try:
+        await update.message.reply_text(body, parse_mode="HTML")
+    except BadRequest as exc:
+        log.error(
+            "telegram BadRequest on sharia handler — retrying plain text",
+            extra={"telegram_err": str(exc), "body_preview": body[:500]},
+        )
+        await update.message.reply_text(body, parse_mode=None)
 
 
 def _pct(v) -> str:

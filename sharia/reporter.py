@@ -1,14 +1,16 @@
 """Weekly compliance report formatter.
 
 Pulls the last week of compliance_alerts + current per-symbol status and
-renders a Telegram-friendly Markdown brief plus a JSON payload for the
-dashboard's Sharia tab.
+renders a Telegram-friendly HTML brief plus a JSON payload for the
+dashboard's Sharia tab. HTML (not Markdown V1) so unbalanced `_`/`*`
+chars in alert values can never break the Telegram parser.
 """
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from html import escape as h
 
 from db.repos import sharia as sharia_repo
 from db.repos import stocks as stocks_repo
@@ -64,37 +66,47 @@ def build_weekly_report(*, days: int = 7) -> WeeklyReport:
     )
 
 
-def render_markdown(report: WeeklyReport) -> str:
-    """Telegram-friendly Markdown rendering of a WeeklyReport.
+def render_html(report: WeeklyReport) -> str:
+    """Telegram-friendly HTML rendering of a WeeklyReport.
 
-    Structure follows the alert template in the project plan: counts at top,
-    tier changes / drift warnings inline, status lists at bottom.
+    Symbol lists and alert values pass through html.escape; the Arabic
+    labels and emoji are safe HTML on their own.
     """
     lines: list[str] = []
-    lines.append("📋 *Weekly Sharia Compliance Report*")
-    lines.append(f"_Generated: {report.generated_at}_")
+    lines.append("📋 <b>Weekly Sharia Compliance Report</b>")
+    lines.append(f"<i>Generated: {h(report.generated_at)}</i>")
     lines.append("")
-    lines.append("*Status counts:*")
+    lines.append("<b>Status counts:</b>")
     for k in ("HALAL", "MIXED", "HARAM", "PENDING"):
         lines.append(f"  {ARABIC_LABEL.get(k, k)}: {report.counts.get(k, 0)}")
     lines.append("")
 
     if report.tier_changes:
-        lines.append("*Tier changes (last 7d):*")
+        lines.append("<b>Tier changes (last 7d):</b>")
         for c in report.tier_changes:
-            lines.append(f"  • {c['symbol']}: {c.get('old_value')} → {c.get('new_value')}")
+            lines.append(
+                f"  • {h(str(c['symbol']))}: "
+                f"{h(str(c.get('old_value') or '—'))} → "
+                f"{h(str(c.get('new_value') or '—'))}"
+            )
         lines.append("")
 
     if report.drift_warnings:
-        lines.append("*Drift warnings (Sharia Drift Radar):*")
+        lines.append("<b>Drift warnings (Sharia Drift Radar):</b>")
         for d in report.drift_warnings:
-            lines.append(f"  ⚠️ {d['symbol']} approaching breach (filing {d.get('new_value')})")
+            lines.append(
+                f"  ⚠️ {h(str(d['symbol']))} approaching breach "
+                f"(filing {h(str(d.get('new_value') or '—'))})"
+            )
         lines.append("")
 
-    lines.append("*Halal:* " + (", ".join(report.halal) if report.halal else "(none)"))
-    lines.append("*Mixed:* " + (", ".join(report.mixed) if report.mixed else "(none)"))
-    lines.append("*Haram:* " + (", ".join(report.haram) if report.haram else "(none)"))
+    def _list(syms: list[str]) -> str:
+        return ", ".join(h(s) for s in syms) if syms else "(none)"
+
+    lines.append(f"<b>Halal:</b> {_list(report.halal)}")
+    lines.append(f"<b>Mixed:</b> {_list(report.mixed)}")
+    lines.append(f"<b>Haram:</b> {_list(report.haram)}")
     if report.pending:
-        lines.append("*Pending verification:* " + ", ".join(report.pending))
+        lines.append(f"<b>Pending verification:</b> {_list(report.pending)}")
 
     return "\n".join(lines)
