@@ -49,6 +49,60 @@ def test_migrations_run_idempotently():
     assert second["seeded_symbols"] == 0
 
 
+def test_migration_003_renames_sq_across_all_symbol_tables():
+    """003 must rename SQ in every symbol-bearing table and be idempotent."""
+    from db.connection import get_conn
+    from db.migrate import MIGRATIONS_DIR, run_migrations
+
+    run_migrations()  # bootstrap schema; XYZ is now seeded (no SQ row)
+
+    # Simulate the production pre-rename state: SQ exists, XYZ does not.
+    # FK off so we can swap the parent row without disturbing children.
+    with get_conn() as conn:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute("DELETE FROM stocks_metadata WHERE symbol='XYZ'")
+        conn.execute(
+            "INSERT INTO stocks_metadata "
+            "(symbol, sector, btc_beta, agent_set, enabled, expected_status) "
+            "VALUES ('SQ', 'CRYPTO_ADJACENT', 1.2, 'standard', 1, 'MIXED')"
+        )
+        conn.execute(
+            "INSERT INTO financial_ratios_history (symbol, fetched_at, sharia_status) "
+            "VALUES ('SQ', '2025-01-01', 'MIXED')"
+        )
+        conn.execute(
+            "INSERT INTO signals (timestamp, symbol, decision, confidence) "
+            "VALUES ('2025-01-01', 'SQ', 'HOLD', 0.5)"
+        )
+        conn.execute(
+            "INSERT INTO compliance_alerts (symbol, alert_type, severity, sent_at) "
+            "VALUES ('SQ', 'STATUS_CHANGE', 'INFO', '2025-01-01')"
+        )
+        conn.execute("PRAGMA foreign_keys=ON")
+
+    # Apply 003 directly; bootstrap already recorded it in schema_migrations.
+    sql = (MIGRATIONS_DIR / "003_rename_sq_to_xyz.sql").read_text(encoding="utf-8")
+    with get_conn() as conn:
+        conn.executescript(sql)
+
+        for table in ("stocks_metadata", "financial_ratios_history",
+                      "signals", "compliance_alerts"):
+            sq_row = conn.execute(
+                f"SELECT 1 FROM {table} WHERE symbol='SQ'"
+            ).fetchone()
+            xyz_row = conn.execute(
+                f"SELECT 1 FROM {table} WHERE symbol='XYZ'"
+            ).fetchone()
+            assert sq_row is None, f"{table} still has SQ after rename"
+            assert xyz_row is not None, f"{table} missing XYZ after rename"
+
+        # Idempotent: a second pass finds nothing to do.
+        conn.executescript(sql)
+        assert conn.execute(
+            "SELECT 1 FROM stocks_metadata WHERE symbol='SQ'"
+        ).fetchone() is None
+
+
 def test_all_tables_exist():
     from db.migrate import run_migrations
     from db.connection import get_conn

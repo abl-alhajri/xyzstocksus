@@ -37,7 +37,7 @@ WATCHLIST: Dict[str, StockSeed] = {
         _seed("MARA", "BTC_MINER", 3.0, "HALAL"),
         _seed("RIOT", "BTC_MINER", 2.8, "HALAL"),
         _seed("SMLR", "BTC_TREASURY", 2.0, "HALAL"),
-        _seed("SQ", "CRYPTO_ADJACENT", 1.2, "MIXED"),
+        _seed("XYZ", "CRYPTO_ADJACENT", 1.2, "MIXED"),
         _seed("PYPL", "CRYPTO_ADJACENT", 0.6, "MIXED"),
         # === BTC-SENSITIVE TECH ===
         _seed("TSLA", "BTC_TREASURY", 0.7, "HALAL"),
