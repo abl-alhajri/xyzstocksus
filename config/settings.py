@@ -124,6 +124,11 @@ class Settings:
     btc_dump_window_min: int = 60
     btc_dump_cooldown_min: int = 60
 
+    # Price-band filter: tickers whose last close falls outside this window
+    # are skipped at scan time (no heuristic, no prescreen, no debate).
+    min_stock_price_usd: float = field(default_factory=lambda: _env_float("MIN_STOCK_PRICE_USD", 1.0))
+    max_stock_price_usd: float = field(default_factory=lambda: _env_float("MAX_STOCK_PRICE_USD", 300.0))
+
 
 settings = Settings()
 

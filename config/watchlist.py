@@ -1,4 +1,4 @@
-"""Initial watchlist — 46 stocks + 3 halal ETFs.
+"""Watchlist — 43 stocks + 3 halal ETFs.
 
 Each entry carries:
 - sector (used by agent_set resolver and dashboard grid)
@@ -33,55 +33,56 @@ WATCHLIST: Dict[str, StockSeed] = {
     for s in (
         # === BTC-CORRELATED (likely halal — verify ratios) ===
         _seed("MSTR", "BTC_TREASURY", 2.5, "MIXED"),
-        _seed("COIN", "CRYPTO_EXCHANGE", 1.8, "HALAL"),
-        _seed("MARA", "BTC_MINER", 3.0, "HALAL"),
         _seed("RIOT", "BTC_MINER", 2.8, "HALAL"),
         _seed("SMLR", "BTC_TREASURY", 2.0, "HALAL"),
         _seed("XYZ", "CRYPTO_ADJACENT", 1.2, "MIXED"),
-        _seed("PYPL", "CRYPTO_ADJACENT", 0.6, "MIXED"),
         # === BTC-SENSITIVE TECH ===
         _seed("TSLA", "BTC_TREASURY", 0.7, "HALAL"),
         _seed("NVDA", "MINING_HARDWARE", 0.5, "HALAL"),
         _seed("AMD", "MINING_HARDWARE", 0.4, "HALAL"),
         # === TECH MEGA-CAPS ===
         _seed("AAPL", "TECH_MEGA", 0.3, "HALAL"),
-        _seed("MSFT", "TECH_MEGA", 0.2, "HALAL"),
         _seed("GOOGL", "TECH_MEGA", 0.3, "HALAL"),
         _seed("AMZN", "TECH_MEGA", 0.2, "MIXED"),
-        _seed("META", "TECH_MEGA", 0.4, "MIXED"),
-        _seed("AVGO", "SEMICONDUCTORS", 0.3, "HALAL"),
+        # === TECH LARGE ===
         _seed("ORCL", "TECH_LARGE", 0.1, "HALAL"),
         _seed("CRM", "TECH_LARGE", 0.2, "HALAL"),
         _seed("NFLX", "TECH_LARGE", 0.2, "MIXED"),
+        _seed("ADBE", "TECH_LARGE", 0.1, "HALAL"),
+        # === SEMICONDUCTORS ===
         _seed("INTC", "SEMICONDUCTORS", 0.2, "HALAL"),
         _seed("QCOM", "SEMICONDUCTORS", 0.2, "HALAL"),
-        _seed("ADBE", "TECH_LARGE", 0.1, "HALAL"),
-        # === PAYMENT (mixed — verify) ===
-        _seed("V", "FINANCE_PAYMENT", 0.0, "MIXED"),
-        _seed("MA", "FINANCE_PAYMENT", 0.0, "MIXED"),
+        _seed("TSM", "SEMICONDUCTORS", 0.2, "HALAL"),
+        _seed("TXN", "SEMICONDUCTORS", 0.1, "HALAL"),
+        _seed("MRVL", "SEMICONDUCTORS", 0.2, "HALAL"),
+        _seed("ARM", "SEMICONDUCTORS", 0.2, "HALAL"),
+        _seed("AMAT", "SEMICONDUCTORS", 0.2, "HALAL"),
+        _seed("COHR", "SEMICONDUCTORS", 0.2, "HALAL"),
+        _seed("ON", "SEMICONDUCTORS", 0.2, "HALAL"),
+        # === AI INFRASTRUCTURE (data center power, networking, AI software) ===
+        _seed("VRT", "AI_INFRA", 0.2, "HALAL"),
+        _seed("ANET", "AI_INFRA", 0.2, "HALAL"),
+        _seed("PLTR", "AI_INFRA", 0.2, "HALAL"),
+        _seed("CRWD", "AI_INFRA", 0.1, "HALAL"),
+        _seed("NOW", "AI_INFRA", 0.1, "HALAL"),
+        # === STORAGE ===
+        _seed("STX", "STORAGE", 0.1, "HALAL"),
+        _seed("WDC", "STORAGE", 0.1, "HALAL"),
+        # === UTILITIES (data-center power demand thesis) ===
+        _seed("VST", "UTILITIES", 0.0, "MIXED"),
+        _seed("TLN", "UTILITIES", 0.0, "MIXED"),
         # === HEALTHCARE ===
-        _seed("UNH", "HEALTHCARE_INSURE", 0.0, "HALAL"),
         _seed("JNJ", "HEALTHCARE_PHARMA", 0.0, "HALAL"),
-        _seed("LLY", "HEALTHCARE_PHARMA", 0.0, "HALAL"),
-        _seed("PFE", "HEALTHCARE_PHARMA", 0.0, "HALAL"),
         _seed("ABBV", "HEALTHCARE_PHARMA", 0.0, "HALAL"),
         _seed("MRK", "HEALTHCARE_PHARMA", 0.0, "HALAL"),
-        _seed("TMO", "HEALTHCARE_DEVICE", 0.0, "HALAL"),
         # === CONSUMER ===
         _seed("WMT", "CONSUMER_RETAIL", 0.0, "MIXED"),
-        _seed("COST", "CONSUMER_RETAIL", 0.0, "MIXED"),
-        _seed("HD", "CONSUMER_RETAIL", 0.0, "HALAL"),
-        _seed("NKE", "CONSUMER_DISC", 0.1, "HALAL"),
-        _seed("MCD", "CONSUMER_DISC", 0.0, "MIXED"),
         _seed("SBUX", "CONSUMER_DISC", 0.0, "MIXED"),
-        _seed("DIS", "CONSUMER_DISC", 0.1, "MIXED"),
         _seed("KO", "CONSUMER_STAPLES", 0.0, "HALAL"),
-        _seed("PEP", "CONSUMER_STAPLES", 0.0, "HALAL"),
         _seed("PG", "CONSUMER_STAPLES", 0.0, "HALAL"),
         # === ENERGY/INDUSTRIAL ===
         _seed("XOM", "ENERGY", 0.0, "HALAL"),
         _seed("CVX", "ENERGY", 0.0, "HALAL"),
-        _seed("CAT", "INDUSTRIAL", 0.0, "HALAL"),
         _seed("BA", "INDUSTRIAL", 0.0, "HALAL"),
         _seed("GE", "INDUSTRIAL", 0.0, "HALAL"),
         # === HALAL ETF ALTERNATIVES ===

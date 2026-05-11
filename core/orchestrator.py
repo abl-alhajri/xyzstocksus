@@ -23,6 +23,7 @@ from config.thresholds import (
 )
 from core import budget_guard, dedup
 from core.logger import get_logger
+from core.price_filter import is_in_range, reason_out_of_range
 from data import btc_feed, earnings_calendar, macro_feed, openinsider, prices
 from db.repos import signals as signals_repo
 from db.repos import stocks as stocks_repo
@@ -49,6 +50,7 @@ class ScanReport:
     debates: list[DebateResult] = field(default_factory=list)
     signals_recorded: list[int] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    excluded_by_price: list[str] = field(default_factory=list)
 
 
 async def run_scan_async(*, allow_outside_hours: bool = True) -> ScanReport:
@@ -107,6 +109,34 @@ async def run_scan_async(*, allow_outside_hours: bool = True) -> ScanReport:
     fetch_interval = "1d"
     res = prices.fetch_history(enabled_syms + ["BTC-USD"],
                               period=fetch_period, interval=fetch_interval)
+
+    # Price-band filter — drop symbols whose last close falls outside the
+    # configured [MIN_STOCK_PRICE_USD, MAX_STOCK_PRICE_USD] window. Missing
+    # frames pass through (we never silently drop on a fetch failure).
+    price_filtered: list = []
+    for stock in enabled:
+        df = res.frames.get(stock.symbol)
+        last_close: float | None = None
+        if df is not None:
+            try:
+                last_close = float(df["Close"].iloc[-1])
+            except Exception:
+                last_close = None
+        if last_close is not None and not is_in_range(last_close):
+            report.excluded_by_price.append(stock.symbol)
+            log.info(
+                "[watchlist] Skipping %s: %s",
+                stock.symbol, reason_out_of_range(last_close),
+            )
+            continue
+        price_filtered.append(stock)
+    if report.excluded_by_price:
+        report.notes.append(
+            f"Excluded by price: {', '.join(report.excluded_by_price)}"
+        )
+    enabled = price_filtered
+    enabled_syms = [s.symbol for s in enabled]
+    report.candidates_pool = len(enabled_syms)
 
     # ------------------------------------------------------------------
     # 2. Heuristic scores

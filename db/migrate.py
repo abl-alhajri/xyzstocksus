@@ -20,6 +20,64 @@ SCHEMA_FILE = Path(__file__).parent / "schema.sql"
 
 _NAME_RE = re.compile(r"^(\d+)_(.+)\.sql$")
 
+# Migration 005 — symbols being hard-deleted. Must match the IN-list in
+# 005_watchlist_refresh.sql. Pre-check refuses to run if any OPEN position
+# exists on these tickers.
+_005_REMOVED = (
+    "MARA", "DIS", "MCD", "NKE", "PEP", "PYPL", "COIN", "TMO", "PFE",
+    "LLY", "COST", "CAT", "META", "MA", "AVGO", "MSFT", "UNH", "V", "HD",
+)
+_005_NEW = (
+    "TSM", "TXN", "PLTR", "MRVL", "STX", "ARM", "VRT", "VST", "TLN",
+    "ANET", "AMAT", "WDC", "CRWD", "NOW", "COHR", "ON",
+)
+
+
+class MigrationAborted(RuntimeError):
+    """Raised by a pre-check hook to refuse a migration safely."""
+
+
+def _precheck_005(conn) -> None:
+    """Abort migration 005 if any of the 19 removed tickers has an OPEN
+    position. Closing those positions is a user action — we never silently
+    delete trades the user is still holding.
+    """
+    placeholders = ",".join("?" * len(_005_REMOVED))
+    rows = conn.execute(
+        f"SELECT symbol, COUNT(*) AS n FROM user_positions "
+        f"WHERE status = 'OPEN' AND symbol IN ({placeholders}) "
+        f"GROUP BY symbol ORDER BY symbol",
+        _005_REMOVED,
+    ).fetchall()
+    if rows:
+        offenders = ", ".join(f"{r['symbol']} ({r['n']})" for r in rows)
+        msg = (
+            f"Migration 005 aborted: OPEN positions exist on tickers being "
+            f"removed: {offenders}. Close them in Telegram (/sell SYMBOL) "
+            f"before redeploying."
+        )
+        print(f"[migrate] {msg}")
+        raise MigrationAborted(msg)
+    print("[migrate] 005 pre-check: no open positions on removed tickers -- OK")
+
+
+def _postmessage_005() -> None:
+    new_list = ", ".join(_005_NEW)
+    print(
+        "[migrate] OK migration 005 complete. New tickers added on next seed: "
+        f"{new_list}. Run /refresh_sharia from Telegram to populate Sharia "
+        f"ratios for the new tickers."
+    )
+
+
+# Map migration name → (precheck, postmessage) hooks. Each is optional.
+_HOOKS: dict[str, dict] = {
+    "005_watchlist_refresh": {
+        "pre": _precheck_005,
+        "post": _postmessage_005,
+    },
+}
+
 
 def _discover_migrations() -> list[tuple[int, str, Path]]:
     """Return (sortable_id, stable_name, path). The name is the file stem so it
@@ -95,6 +153,10 @@ def run_migrations() -> dict:
             if name in applied:
                 report["already_present"].append(name)
                 continue
+            hooks = _HOOKS.get(name, {})
+            pre = hooks.get("pre")
+            if pre is not None:
+                pre(conn)
             sql_body = path.read_text(encoding="utf-8").strip()
             rows_before = conn.total_changes
             if sql_body and not _is_only_comments(sql_body):
@@ -107,6 +169,9 @@ def run_migrations() -> dict:
             report["applied"].append(name)
             if rows_changed:
                 print(f"[migrate] {name}: {rows_changed} rows changed")
+            post = hooks.get("post")
+            if post is not None:
+                post()
 
         # Seed in one transaction (no executescript inside).
         conn.execute("BEGIN")

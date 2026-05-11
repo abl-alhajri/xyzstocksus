@@ -28,8 +28,9 @@ from config.watchlist import WATCHLIST, all_symbols, get_seed
 # ----------------------- Watchlist -----------------------
 
 def test_watchlist_size_matches_spec():
-    # 46 stocks + 3 halal ETFs per spec (trimmed from 54 to fit Tiingo free tier)
-    assert len(WATCHLIST) == 49
+    # 43 stocks + 3 halal ETFs after migration 005 watchlist refresh
+    # (removed 19, added 16 net new — see db/migrations/005_watchlist_refresh.sql)
+    assert len(WATCHLIST) == 46
 
 
 def test_watchlist_no_overlap_with_excluded():
@@ -45,6 +46,64 @@ def test_watchlist_seed_lookup_case_insensitive():
 def test_btc_beta_realistic():
     for sym, seed in WATCHLIST.items():
         assert 0.0 <= seed.btc_beta <= 5.0, f"{sym} btc_beta {seed.btc_beta} out of range"
+
+
+def test_watchlist_removed_tickers_absent():
+    removed = (
+        "MARA", "DIS", "MCD", "NKE", "PEP", "PYPL", "COIN", "TMO", "PFE",
+        "LLY", "COST", "CAT", "META", "MA", "AVGO", "MSFT", "UNH", "V", "HD",
+    )
+    for sym in removed:
+        assert sym not in WATCHLIST, f"{sym} should have been removed in migration 005"
+
+
+def test_watchlist_new_tickers_present():
+    added = (
+        "TSM", "TXN", "PLTR", "MRVL", "STX", "ARM", "VRT", "VST", "TLN",
+        "ANET", "AMAT", "WDC", "CRWD", "NOW", "COHR", "ON",
+    )
+    for sym in added:
+        assert sym in WATCHLIST, f"{sym} should have been added in migration 005"
+
+
+def test_watchlist_no_haram_seeds():
+    # Seed hints are not authoritative, but no entry should claim HARAM —
+    # if business activity is a hard exclusion it belongs in EXCLUDED, not the watchlist.
+    for sym, seed in WATCHLIST.items():
+        assert seed.expected_status != "HARAM", f"{sym} should not be seeded as HARAM"
+
+
+def test_watchlist_new_categories_populated():
+    sectors = {s.sector for s in WATCHLIST.values()}
+    for required in ("AI_INFRA", "STORAGE", "UTILITIES", "SEMICONDUCTORS"):
+        assert required in sectors, f"missing sector: {required}"
+
+
+def test_new_tickers_landed_in_expected_categories():
+    """16 net new tickers must land in the categories declared in the refresh plan."""
+    expected = {
+        "TSM": "SEMICONDUCTORS", "TXN": "SEMICONDUCTORS",
+        "MRVL": "SEMICONDUCTORS", "ARM": "SEMICONDUCTORS",
+        "AMAT": "SEMICONDUCTORS", "COHR": "SEMICONDUCTORS",
+        "ON": "SEMICONDUCTORS",
+        "PLTR": "AI_INFRA", "VRT": "AI_INFRA", "ANET": "AI_INFRA",
+        "CRWD": "AI_INFRA", "NOW": "AI_INFRA",
+        "STX": "STORAGE", "WDC": "STORAGE",
+        "VST": "UTILITIES", "TLN": "UTILITIES",
+    }
+    for sym, sector in expected.items():
+        seed = WATCHLIST.get(sym)
+        assert seed is not None, f"{sym} missing"
+        assert seed.sector == sector, (
+            f"{sym} sector {seed.sector!r} != expected {sector!r}"
+        )
+
+
+def test_watchlist_empty_categories_absent():
+    sectors = {s.sector for s in WATCHLIST.values()}
+    for dropped in ("CRYPTO_EXCHANGE", "HEALTHCARE_DEVICE",
+                    "HEALTHCARE_INSURE", "FINANCE_PAYMENT"):
+        assert dropped not in sectors, f"dead sector still present: {dropped}"
 
 
 # ----------------------- Exclusions -----------------------
@@ -85,7 +144,7 @@ def test_set_sizes():
 
 
 def test_resolver_btc():
-    for sector in ("BTC_TREASURY", "BTC_MINER", "CRYPTO_EXCHANGE", "MINING_HARDWARE"):
+    for sector in ("BTC_TREASURY", "BTC_MINER", "CRYPTO_ADJACENT", "MINING_HARDWARE"):
         assert resolve_set_for_sector(sector).name == "btc_full"
 
 

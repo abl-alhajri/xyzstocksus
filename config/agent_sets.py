@@ -82,7 +82,6 @@ SETS_BY_NAME: dict[str, AgentSet] = {
 _BTC_SECTORS = frozenset({
     "BTC_TREASURY",
     "BTC_MINER",
-    "CRYPTO_EXCHANGE",
     "CRYPTO_ADJACENT",
     "MINING_HARDWARE",
 })

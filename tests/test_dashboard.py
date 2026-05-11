@@ -60,7 +60,8 @@ def test_api_watchlist_shape():
     assert r.status_code == 200
     body = r.get_json()
     assert "sectors" in body
-    assert body["total"] >= 49
+    # Post-migration 005: 43 stocks + 3 halal ETFs = 46 tickers
+    assert body["total"] >= 46
     # Every sector entry has a list of stocks
     for sec in body["sectors"]:
         assert "sector" in sec
